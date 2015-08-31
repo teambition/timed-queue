@@ -6,8 +6,8 @@ options = {tonumber(options[1] or ARGV[1]), tonumber(options[2] or ARGV[2]), ton
 
 local res = {}
 local dueTime = options[3] + tonumber(ARGV[4])
-local activeQueue = redis.call('hgetall', KEYS[2])
 
+local activeQueue = redis.call('hgetall', KEYS[2])
 for i = 1, #activeQueue, 2 do
   local times = {}
   for time in string.gmatch(activeQueue[i + 1], '%d+') do
@@ -24,7 +24,6 @@ for i = 1, #activeQueue, 2 do
 end
 
 local queue = redis.call('zrangebyscore', KEYS[1], 0, dueTime, 'WITHSCORES')
-
 for i = 1, #queue, 2 do
   res[#res + 1] = queue[i]
   res[#res + 1] = queue[i + 1]
