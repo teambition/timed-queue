@@ -7,7 +7,7 @@ var gulpSequence = require('gulp-sequence')
 gulp.task('mocha', function () {
   return gulp.src('test/*.js', {read: false})
     .pipe(mocha({
-      timeout: 8000
+      timeout: 60000
     }))
 })
 

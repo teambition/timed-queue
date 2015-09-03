@@ -1,8 +1,8 @@
+'use strict'
+
 // **Github:** https://github.com/teambition/timed-queue
 //
 // **License:** MIT
-
-'use strict'
 
 var fs = require('fs')
 var util = require('util')
@@ -12,24 +12,26 @@ var EventEmitter = require('events').EventEmitter
 var luaScript = fs.readFileSync(__dirname + '/lua/queue.lua', {encoding: 'utf8'})
 
 var thunk = thunks()
-
 module.exports = TimedQueue
 
 function TimedQueue (options) {
-  this.options = options || {}
-  this.prefix = this.options.prefix || 'TIMEDQ'
+  options = options || {}
+
+  this.prefix = options.prefix || 'TIMEDQ'
   this.queuesKey = this.prefix + ':QUEUES'
-  this.interval = this.options.interval || 1000 * 150
-  this.accuracy = this.options.accuracy || this.interval / 5
-  this.expire = this.options.expire || this.interval * 5
-  this.retry = this.options.retry || this.interval / 2
-  this.queues = Object.create(null)
-  this.delay = this.interval
+  this.interval = options.interval || 1000 * 120
+  this.retry = options.retry || this.interval / 2
+  this.expire = options.expire || this.interval * 5
+  this.accuracy = options.accuracy || this.interval / 5
+
   this.redis = null
   this.timer = null
   this.scanTime = 0
   this.scanning = false
-  this.queueScript = null
+  this.scanQueue = null
+  this.delay = this.interval
+  this.queues = Object.create(null)
+  this.scanQueue = null
 
   var ctx = this
   this.thunk = thunks(function (error) {
@@ -41,40 +43,37 @@ util.inherits(TimedQueue, EventEmitter)
 
 TimedQueue.prototype.connect = function () {
   var ctx = this
-  if (!this.redis) {
-    this.redis = redis.createClient.apply(null, arguments)
-    this.redis
-      .on('connect', function () {
-        ctx.emit('connect')
-      })
-      .on('error', function (error) {
-        ctx.emit('error', error)
-      })
-      .on('close', function () {
-        ctx.emit('close')
-      })
-
-    this.queueScript = thunk.persist.call(this, this.redis.script('load', luaScript))
-    // pre-load lua script
-    this.thunk(this.queueScript)()
-    // auto scan jobs
-    thunk.delay.call(this, Math.random() * this.interval)(function () {
-      if (!this.timer && !this.scanning) this.scan()
+  if (this.redis) return this
+  this.redis = redis.createClient.apply(null, arguments)
+    .on('connect', function () {
+      ctx.emit('connect')
     })
-  }
+    .on('error', function (error) {
+      ctx.emit('error', error)
+    })
+    .on('close', function () {
+      ctx.emit('close')
+    })
+
+  this.scanQueue = this.thunk.persist.call(this, this.redis.script('load', luaScript))
+  // auto scan jobs
+  thunk.delay.call(this, Math.random() * this.interval)(function () {
+    if (!this.timer && !this.scanning) this.scan()
+  })
   return this
 }
 
 TimedQueue.prototype.scan = function () {
+  if (this.scanning) return this
+
   var ctx = this
   var scanStart
-  if (this.scanning) return this
   this.scanning = true
   this.scanTime = scanStart = Date.now()
 
   this.redis.smembers(this.queuesKey)(function (err, queues) {
     if (err) throw err
-    ctx.emit('scanStart')
+    ctx.emit('scanStart', queues.length)
     return thunk.seq(queues.map(function (queue) {
       return ctx.queue(queue).scan()
     }))
@@ -90,8 +89,9 @@ TimedQueue.prototype.scan = function () {
           return p + s
         }, 0)
       }, 0)
-      ctx.adjustDelay(score / count)
+      ctx.regulateFreq(score / count)
     }
+
     if (!ctx.timer && ctx.scanning) {
       ctx.scanning = false
       ctx.scan()
@@ -103,6 +103,8 @@ TimedQueue.prototype.scan = function () {
     ctx.timer = null
     if (!ctx.scanning) ctx.scan()
   }, this.delay)
+
+  return this
 }
 
 TimedQueue.prototype.stop = function () {
@@ -119,14 +121,9 @@ TimedQueue.prototype.queue = function (queueName, options) {
   return this.queues[queueName]
 }
 
-TimedQueue.prototype.adjustDelay = function (factor) {
-  if (factor < -0.1) {
-    this.delay *= 0.8
-    if (this.interval / 10 > this.delay) this.delay = this.interval / 10
-  } else if (factor > 0.1) {
-    this.delay *= 1.25
-    if (this.interval * 5 < this.delay) this.delay = this.interval * 5
-  }
+TimedQueue.prototype.regulateFreq = function (factor) {
+  if (factor < -0.1) this.delay = Math.max(this.delay * (1 + factor), this.interval / 10)
+  else if (factor > 0.1) this.delay = Math.min(this.delay * (1 + factor), this.interval * 5)
 }
 
 function Queue (timedQueue, queueName, options) {
@@ -138,20 +135,18 @@ function Queue (timedQueue, queueName, options) {
   this.init(options)
   EventEmitter.call(this)
 }
-
 util.inherits(Queue, EventEmitter)
 
 Queue.prototype.init = function (options) {
   var root = this.root
   root.thunk(root.redis.sadd(root.queuesKey, this.name))()
 
-  if (options) {
-    root.thunk(root.redis.hmset(this.queueOptionsKey, {
-      retry: options.retry || root.retry,
-      expire: options.expire || root.expire,
-      accuracy: options.accuracy || root.accuracy
-    }))()
-  }
+  if (!options) return this
+  root.thunk(root.redis.hmset(this.queueOptionsKey, {
+    retry: options.retry || root.retry,
+    expire: options.expire || root.expire,
+    accuracy: options.accuracy || root.accuracy
+  }))()
   return this
 }
 
@@ -194,7 +189,6 @@ Queue.prototype.deljob = function (job) {
   var args = slice(arguments)
   return thunk.call(this, function (done) {
     var ctx = this
-
     for (var i = 0, l = args.length || 1; i < l; i++) validateString(args[i])
 
     args.unshift(ctx.queueKey)
@@ -212,20 +206,21 @@ Queue.prototype.deljob = function (job) {
 Queue.prototype.getjob = function () {
   return thunk.call(this, function (done) {
     var ctx = this
-    this.queueScript(function (err, luaSHA) {
-      if (err) throw err
-      var timestamp = Date.now()
-      return ctx.root.redis.evalsha(luaSHA, 3,
+    var root = this.root
+    var jobs = []
+    var timestamp = Date.now()
+
+    thunk(root.scanQueue)(function (_, luaSHA) {
+      return root.redis.evalsha(luaSHA, 3,
         ctx.queueKey, ctx.activeQueueKey, ctx.queueOptionsKey,
-        ctx.root.retry, ctx.root.expire, ctx.root.accuracy, timestamp
-      )(function (err, res) {
-        if (err) throw err
-        var jobs = []
-        for (var i = 0, l = res.length - 1; i < l; i += 2) {
-          jobs.push(new Job(ctx.name, res[i], res[i + 1], timestamp))
-        }
-        return jobs
-      })
+        root.retry, root.expire, root.accuracy, timestamp
+      )
+    })(function (err, res) {
+      if (err) throw err
+      for (var i = 0, l = res.length - 1; i < l; i += 2) {
+        jobs.push(new Job(ctx.name, res[i], res[i + 1], timestamp))
+      }
+      return jobs
     })(done)
   })
 }
