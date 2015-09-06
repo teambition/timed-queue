@@ -11,6 +11,10 @@ gulp.task('mocha', function () {
     }))
 })
 
-gulp.task('default', ['test'])
+gulp.task('exit', function (callback) {
+  callback()
+  process.exit(0)
+})
 
-gulp.task('test', gulpSequence('mocha'))
+gulp.task('default', gulpSequence('test'))
+gulp.task('test', gulpSequence('mocha', 'exit'))

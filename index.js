@@ -18,11 +18,13 @@ function TimedQueue (options) {
   options = options || {}
 
   this.prefix = options.prefix || 'TIMEDQ'
-  this.queuesKey = this.prefix + ':QUEUES'
-  this.interval = options.interval || 1000 * 120
-  this.retry = options.retry || this.interval / 2
-  this.expire = options.expire || this.interval * 5
-  this.accuracy = options.accuracy || this.interval / 5
+  this.queuesKey = '{' + this.prefix + '}:QUEUES'
+  this.count = Math.floor(options.count) || 64
+  this.interval = Math.floor(options.interval) || 1000 * 120
+  this.expire = Math.floor(options.expire) || this.interval * 5
+  this.retry = Math.floor(options.retry) || Math.floor(this.interval / 2)
+  this.accuracy = Math.floor(options.accuracy) || Math.floor(this.interval / 5)
+  this.autoScan = options.autoScan !== false
 
   this.redis = null
   this.timer = null
@@ -57,14 +59,16 @@ TimedQueue.prototype.connect = function () {
 
   this.scanQueue = this.thunk.persist.call(this, this.redis.script('load', luaScript))
   // auto scan jobs
-  thunk.delay.call(this, Math.random() * this.interval)(function () {
-    if (!this.timer && !this.scanning) this.scan()
-  })
+  if (this.autoScan) {
+    thunk.delay.call(this, Math.random() * this.interval)(function () {
+      this.scan()
+    })
+  }
   return this
 }
 
 TimedQueue.prototype.scan = function () {
-  if (this.scanning) return this
+  if (this.scanning || !this.redis) return this
 
   var ctx = this
   var scanStart
@@ -77,19 +81,19 @@ TimedQueue.prototype.scan = function () {
     return thunk.seq(queues.map(function (queue) {
       return ctx.queue(queue).scan()
     }))
-  })(function (err, scoreQueues) {
+  })(function (err, queueScores) {
     if (err) ctx.emit('error', err)
     else {
-      ctx.emit('scanEnd', scoreQueues.length, Date.now() - scanStart)
+      ctx.emit('scanEnd', queueScores.length, Date.now() - scanStart)
 
       var count = 0
-      var score = scoreQueues.reduce(function (prev, scores) {
+      var score = queueScores.reduce(function (prev, scores) {
         return prev + scores.reduce(function (p, s) {
           count++
           return p + s
         }, 0)
       }, 0)
-      ctx.regulateFreq(score / count)
+      if (count) ctx.regulateFreq(score / count)
     }
 
     if (!ctx.timer && ctx.scanning) {
@@ -114,11 +118,36 @@ TimedQueue.prototype.stop = function () {
   return this
 }
 
+TimedQueue.prototype.close = function () {
+  this.stop()
+  this.redis.clientEnd()
+  this.redis = null
+  return this
+}
+
 TimedQueue.prototype.queue = function (queueName, options) {
   validateString(queueName)
   if (!this.queues[queueName]) this.queues[queueName] = new Queue(this, queueName, options)
   else if (options) this.queues[queueName].init(options)
   return this.queues[queueName]
+}
+
+TimedQueue.prototype.destroyQueue = function (queueName) {
+  return thunk.call(this, function (done) {
+    var redis = this.redis
+    var queue = this.queues[queueName]
+    if (!queue) return done()
+
+    delete this.queues[queueName]
+    thunk.all([
+      redis.srem(this.queuesKey, queue.name),
+      redis.del(queue.queueOptionsKey),
+      redis.del(queue.activeQueueKey),
+      redis.del(queue.queueKey)
+    ])(function (err) {
+      done(err, null)
+    })
+  })
 }
 
 TimedQueue.prototype.regulateFreq = function (factor) {
@@ -129,7 +158,7 @@ TimedQueue.prototype.regulateFreq = function (factor) {
 function Queue (timedQueue, queueName, options) {
   this.root = timedQueue
   this.name = queueName
-  this.queueKey = '{' + timedQueue.prefix + ':' + queueName + '}'
+  this.queueKey = '{' + timedQueue.prefix + ':' + queueName + '}' // hash tag
   this.activeQueueKey = this.queueKey + ':-'
   this.queueOptionsKey = this.queueKey + ':O'
   this.init(options)
@@ -143,6 +172,7 @@ Queue.prototype.init = function (options) {
 
   if (!options) return this
   root.thunk(root.redis.hmset(this.queueOptionsKey, {
+    count: options.count || root.count,
     retry: options.retry || root.retry,
     expire: options.expire || root.expire,
     accuracy: options.accuracy || root.accuracy
@@ -151,18 +181,19 @@ Queue.prototype.init = function (options) {
 }
 
 Queue.prototype.addjob = function (job, timing) {
-  var args = slice(arguments)
+  var args = Array.isArray(job) ? job : slice(arguments)
   return thunk.call(this, function (done) {
+    var data = [this.queueKey]
     var current = Date.now()
 
     for (var i = 0, l = args.length || 2; i < l; i += 2) {
       validateString(args[i])
       timing = Math.floor(args[i + 1])
       if (!timing || timing <= current) throw new Error(String(args[i + 1]) + ' is invalid time')
+      data.push(timing, args[i])
     }
 
-    args.unshift(this.queueKey)
-    this.root.redis.zadd(args)(done)
+    this.root.redis.zadd(data)(done)
   })
 }
 
@@ -173,20 +204,20 @@ Queue.prototype.show = function (job) {
 
     ctx.root.redis.zscore(ctx.queueKey, job)(function (err, timing) {
       if (err) throw err
-      if (timing) return new Job(ctx.name, job, timing, 0)
+      if (timing) return new Job(ctx.name, job, timing, 0, 0)
 
       return this.hget(ctx.activeQueueKey, job)(function (err, times) {
         if (err) throw err
         if (!times) return null
         times = times.split(':')
-        return new Job(ctx.name, job, times[0], times[1])
+        return new Job(ctx.name, job, times[0], times[1], times.length - 2)
       })
     })(done)
   })
 }
 
 Queue.prototype.deljob = function (job) {
-  var args = slice(arguments)
+  var args = Array.isArray(job) ? job : slice(arguments)
   return thunk.call(this, function (done) {
     var ctx = this
     for (var i = 0, l = args.length || 1; i < l; i++) validateString(args[i])
@@ -203,33 +234,29 @@ Queue.prototype.deljob = function (job) {
   })
 }
 
-Queue.prototype.getjob = function () {
+Queue.prototype.getjobs = function (scanActive) {
   return thunk.call(this, function (done) {
     var ctx = this
     var root = this.root
-    var jobs = []
     var timestamp = Date.now()
 
     thunk(root.scanQueue)(function (_, luaSHA) {
       return root.redis.evalsha(luaSHA, 3,
         ctx.queueKey, ctx.activeQueueKey, ctx.queueOptionsKey,
-        root.retry, root.expire, root.accuracy, timestamp
+        root.count, root.retry, root.expire, root.accuracy, timestamp, +(scanActive !== false)
       )
     })(function (err, res) {
       if (err) throw err
-      for (var i = 0, l = res.length - 1; i < l; i += 2) {
-        jobs.push(new Job(ctx.name, res[i], res[i + 1], timestamp))
-      }
-      return jobs
+      return new ScanResult(ctx.name, timestamp, res)
     })(done)
   })
 }
 
 Queue.prototype.ackjob = function (job) {
-  var args = slice(arguments)
+  var args = Array.isArray(job) ? job : slice(arguments)
   return thunk.call(this, function (done) {
     for (var i = 0, l = args.length || 1; i < l; i++) validateString(args[i])
-    args.unshift(this.queueKey)
+    args.unshift(this.activeQueueKey)
     return this.root.redis.hdel(args)(done)
   })
 }
@@ -237,16 +264,23 @@ Queue.prototype.ackjob = function (job) {
 Queue.prototype.scan = function () {
   return thunk.call(this, function (done) {
     var ctx = this
-    this.getjob()(function (err, jobs) {
-      if (err) throw err
-      return thunk.all(jobs.map(function (job) {
-        return thunk.delay()(function () {
-          var score = job.timing === job.active ? 0 : (job.timing > job.active ? 1 : -1)
-          ctx.emit('job', job)
-          return score
+    var scores = []
+    if (!ctx.listenerCount('job')) throw new Error('"job" listener required!')
+    getjobs()
+
+    function getjobs (err, res) {
+      if (err) return done(err)
+      if (res) {
+        res.jobs.map(function (job) {
+          if (!job.retryCount) scores.push((job.timing - job.active) / res.retry)
+          process.nextTick(function () {
+            ctx.emit('job', job)
+          })
         })
-      }))
-    })(done)
+        if (!res.hasMore) return done(null, scores)
+      }
+      ctx.getjobs(!res)(getjobs)
+    }
   })
 }
 
@@ -261,19 +295,33 @@ Queue.prototype.showActive = function () {
     var ctx = this
     return this.root.redis.hgetall(this.activeQueueKey)(function (err, res) {
       if (err) throw err
-      return Object.keys(res).map(function (job) {
-        var times = res[job].split(':')
-        return new Job(ctx.name, job, times[0], times[1])
-      })
-    })
+      return Object.keys(res)
+        .map(function (job) {
+          var times = res[job].split(':')
+          return new Job(ctx.name, job, times[0], times[1], times.length - 2)
+        }).sort(function (a, b) {
+          return a.timing - b.timing
+        })
+    })(done)
   })
 }
 
-function Job (queue, job, timing, active) {
+function Job (queue, job, timing, active, retryCount) {
   this.queue = queue
   this.job = job
   this.timing = +timing
   this.active = +active
+  this.retryCount = +retryCount
+}
+
+function ScanResult (name, timestamp, res) {
+  var jobs = res[0]
+  this.retry = +res[1]
+  this.hasMore = +res[2]
+  this.jobs = []
+  for (var i = 0, l = jobs.length - 2; i < l; i += 3) {
+    this.jobs.push(new Job(name, jobs[i], jobs[i + 1], timestamp, jobs[i + 2]))
+  }
 }
 
 function slice (args, start) {
@@ -286,5 +334,5 @@ function slice (args, start) {
 }
 
 function validateString (str) {
-  if (!str || typeof str !== 'string') throw new TypeError(String(str) + ' is invalid string')
+  if (typeof str !== 'string' || !str) throw new TypeError(String(str) + ' is invalid string')
 }
