@@ -67,6 +67,30 @@ TimedQueue.prototype.connect = function () {
   return this
 }
 
+TimedQueue.prototype.queue = function (queueName, options) {
+  validateString(queueName)
+  if (!this.queues[queueName]) this.queues[queueName] = new Queue(this, queueName, options)
+  else if (options) this.queues[queueName].init(options)
+  return this.queues[queueName]
+}
+
+TimedQueue.prototype.destroyQueue = function (queueName) {
+  return thunk.call(this, function (done) {
+    var redis = this.redis
+    var queue = this.queue(queueName)
+
+    delete this.queues[queueName]
+    thunk.all([
+      redis.srem(this.queuesKey, queue.name),
+      redis.del(queue.queueOptionsKey),
+      redis.del(queue.activeQueueKey),
+      redis.del(queue.queueKey)
+    ])(function (err) {
+      done(err, null)
+    })
+  })
+}
+
 TimedQueue.prototype.scan = function () {
   if (this.scanning || !this.redis) return this
 
@@ -125,34 +149,10 @@ TimedQueue.prototype.close = function () {
   return this
 }
 
-TimedQueue.prototype.queue = function (queueName, options) {
-  validateString(queueName)
-  if (!this.queues[queueName]) this.queues[queueName] = new Queue(this, queueName, options)
-  else if (options) this.queues[queueName].init(options)
-  return this.queues[queueName]
-}
-
-TimedQueue.prototype.destroyQueue = function (queueName) {
-  return thunk.call(this, function (done) {
-    var redis = this.redis
-    var queue = this.queues[queueName]
-    if (!queue) return done()
-
-    delete this.queues[queueName]
-    thunk.all([
-      redis.srem(this.queuesKey, queue.name),
-      redis.del(queue.queueOptionsKey),
-      redis.del(queue.activeQueueKey),
-      redis.del(queue.queueKey)
-    ])(function (err) {
-      done(err, null)
-    })
-  })
-}
-
 TimedQueue.prototype.regulateFreq = function (factor) {
   if (factor < -0.1) this.delay = Math.max(this.delay * (1 + factor), this.interval / 10)
   else if (factor > 0.1) this.delay = Math.min(this.delay * (1 + factor), this.interval * 5)
+  return this
 }
 
 function Queue (timedQueue, queueName, options) {
@@ -265,7 +265,8 @@ Queue.prototype.scan = function () {
   return thunk.call(this, function (done) {
     var ctx = this
     var scores = []
-    if (!ctx.listenerCount('job')) throw new Error('"job" listener required!')
+    var listener = ctx.listenerCount ? ctx.listenerCount('job') : EventEmitter.listenerCount(ctx, 'job')
+    if (!listener) throw new Error('"job" listener required!')
     getjobs()
 
     function getjobs (err, res) {
