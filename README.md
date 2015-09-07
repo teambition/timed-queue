@@ -45,15 +45,15 @@ var TimedQueue = require('timed-queue')
 
 ### new TimedQueue([options]) => `timedQueue` object
 
-Return a `timedQueue` client, it is a EventEmitter instance.
+Return a `timedQueue` client. It is an EventEmitter instance.
 
-- `options.prefix`: {String} Redis key' prefix, or namespace. Default to `"TIMEDQ"`
-- `options.count`: {Number} The max jobs count for queue's `getjobs` method. Default to `64`
-- `options.interval`: {Number} Interval time for scanning. Default to `1000 * 120`
-- `options.retry`: {Number} Retry time for job, a job that have been actived and has not be ACK in `retry` time will be actived again. Default to `interval / 2`
-- `options.expire`: {Number} Expire time for job, a job that have been actived and has not be ACK in `expire` time will be remove from queue. Default to `interval * 5`
-- `options.accuracy`: {Number} accuracy of scanning, Default to `interval / 5`
-- `options.autoScan`: {Boolean} You can set it to `false` if you don't need auto scan, Default to `true`
+- `options.prefix`: {String} Redis key's prefix, or namespace. Default to `"TIMEDQ"`
+- `options.count`: {Number} The maximum job count for queue's `getjobs` method. Default to `64`
+- `options.interval`: {Number} Interval time for scanning. Default to `1000 * 120` ms
+- `options.retry`: {Number} Retry time for a job. A job that has been actived but has not been ACK in `retry` time will be actived again. Default to `interval / 2` ms
+- `options.expire`: {Number} Expiration time for a job. A job that has been actived and has not been ACK in `expire` time will be removed from the queue. Default to `interval * 5` ms
+- `options.accuracy`: {Number} Scanning accuracy. Default to `interval / 5`
+- `options.autoScan`: {Boolean} The flag to enable or disable automatic scan. Default to `true`. It can be set to `false` if automatic scan is not desired. Default to `true`
 
 ```js
 var timedQueue = new TimedQueue()
@@ -61,7 +61,7 @@ var timedQueue = new TimedQueue()
 
 ### TimedQueue.prototype.connect([host, options]) => `this`
 
-Connect to redis, the arguments is same as [thunk-redis](https://github.com/thunks/thunk-redis)'s `createClient`
+Connect to redis. Arguments are the same as [thunk-redis](https://github.com/thunks/thunk-redis)'s `createClient`
 
 ```js
 timedQueue.connect()
@@ -69,13 +69,13 @@ timedQueue.connect()
 
 ### TimedQueue.prototype.queue(queue[, options]) => `Queue` instance
 
-Return the `queue` object. if the `queue` exists, it will be return, otherwise create and return it. It is a EventEmitter instance.
+Return a `queue` object if one exists. Otherwise it creates a `queue` object and return it. It is a EventEmitter instance.
 
-- `queue`: {String} queue's name
-- `options.count`: {Number} The max jobs count for queue's `getjobs` method. Default to timedQueue's `count`
-- `options.retry`: {Number} Retry time for job, a job that have been actived and has not be ACK in `retry` time will be actived again. Default to timedQueue's `retry`
-- `options.expire`: {Number} Expire time for job, a job that have been actived and has not be ACK in `expire` time will be remove from queue. Default to timedQueue's `expire`
-- `options.accuracy`: {Number} accuracy of scanning, Default to timedQueue's `accuracy`
+- `queue`: {String} The queue's name
+- `options.count`: {Number} The maximum job count for queue's `getjobs` method. Default to timedQueue's `count`
+- `options.retry`: {Number} Retry time for a job. A job that has been actived and has not been ACK in `retry` time will be actived again. Default to timedQueue's `retry`
+- `options.expire`: {Number} Expiration time for job. A job that has been actived and has not been ACK in `expire` time will be removed from the queue. Default to timedQueue's `expire`
+- `options.accuracy`: {Number} Scanning accuracy, Default to timedQueue's `accuracy`
 
 ```js
 var eventQueue = timedQueue.queue('event', {retry: 1000, expire: 5000})
@@ -83,11 +83,11 @@ var eventQueue = timedQueue.queue('event', {retry: 1000, expire: 5000})
 
 ### TimedQueue.prototype.destroyQueue(queue[, options]) => `this`
 
-Remove the queue, it will delete all queue's data from redis!
+Remove the queue. It deletes all data in the queue from redis.
 
 ### TimedQueue.prototype.scan() => `this`
 
-Start scanning, it will auto start after `connect` unless `autoScan` set to `false`.
+Start scanning. It automatically starts after `connect` method is called unless `autoScan` is set to `false`.
 
 ### TimedQueue.prototype.stop() => `this`
 
@@ -95,25 +95,25 @@ Stop scanning.
 
 ### TimedQueue.prototype.close() => `this`
 
-Close the `timedQueue`, redis client of timedQueue will be closed too.
+Close the `timedQueue`. It closes redis client of the `timedQueue` accordingly.
 
 ### TimedQueue.prototype.regulateFreq(factor) => `this`
 
-It is used to regulate the scanning freq automatic.
+It is used to regulate the automatic scanning frequency.
 
 ### Queue.prototype.init([options]) => `this`
 
-- `options.count`: {Number} The max jobs count for queue's `getjobs` method. Default to timedQueue's `count`
-- `options.retry`: {Number} Retry time for job, a job that have been actived and has not be ACK in `retry` time will be actived again. Default to timedQueue's `retry`
-- `options.expire`: {Number} Expire time for job, a job that have been actived and has not be ACK in `expire` time will be remove from queue. Default to timedQueue's `expire`
-- `options.accuracy`: {Number} accuracy of scanning, Default to timedQueue's `accuracy`
+- `options.count`: {Number} The maximum job count for queue's `getjobs` method. Default to timedQueue's `count`
+- `options.retry`: {Number} Retry time for a job. A job that has been actived and has not been ACK in `retry` time will be actived again. Default to timedQueue's `retry`
+- `options.expire`: {Number} Expire time for a job. A job that has been actived and has not been ACK in `expire` time will be removed from queue. Default to timedQueue's `expire`
+- `options.accuracy`: {Number} Scanning accuracy. Default to timedQueue's `accuracy`
 
 ### Queue.prototype.addjob(job, timing[, job, timing, ...]) => `thunk` function
 
-Add one or more jobs to the queue. It can be used to update the job's timing too.
+Add one or more jobs to the queue. It can be used to update the job's timing.
 
-- `job`: {String} job
-- `timing`: {Number} the time that will be actived by millisecond, it should greater than `Date.now()`
+- `job`: {String} The job's name
+- `timing`: {Number} The time in millisecond before the job is actived. It should greater than `Date.now()`
 
 ```js
 eventQueue.addjob('52b3b5f49c2238313600015d', 1441552050409)(function (err, res) {
@@ -155,7 +155,7 @@ eventQueue.deljob('52b3b5f49c2238313600015d')(function (err, res) {
 
 ### Queue.prototype.getjobs([scanActive]) => `thunk` function
 
-It is call by `Queue.prototype.scan`, you should not call it directly.
+It is called by `Queue.prototype.scan`. It should not be called explicitly.
 
 ### Queue.prototype.ackjob(job) => `thunk` function
 
@@ -171,7 +171,7 @@ eventQueue.ackjob('52b3b5f49c2238313600015d')(function (err, res) {
 
 ### Queue.prototype.scan() => `thunk` function
 
-It is call by `TimedQueue.prototype.scan`, you should not call it directly.
+It is called by `TimedQueue.prototype.scan`. It should not be called explicitly.
 
 ### Queue.prototype.len() => `thunk` function
 
@@ -185,7 +185,7 @@ eventQueue.len()(function (err, res) {
 
 ### Queue.prototype.showActive() => `thunk` function
 
-Return the actived jobs in queue.
+Return actived jobs in the queue.
 
 ```js
 eventQueue.showActive()(function (err, res) {
