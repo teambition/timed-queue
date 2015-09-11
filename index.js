@@ -149,9 +149,11 @@ TimedQueue.prototype.close = function () {
   return this
 }
 
+// x > 0 | 2 - 1 / (1 + x)
+// x < 0 | 1 / (1 - x)
 TimedQueue.prototype.regulateFreq = function (factor) {
-  if (factor < -0.1) this.delay = Math.max(this.delay * (1 + factor), this.interval / 10)
-  else if (factor > 0.1) this.delay = Math.min(this.delay * (1 + factor), this.interval * 5)
+  if (factor < -0.05) this.delay = Math.max(this.delay / (1 - factor), this.interval / 10)
+  else if (factor > 0.05) this.delay = Math.min(this.delay * (2 - 1 / (1 + factor)), this.interval * 5)
   return this
 }
 
