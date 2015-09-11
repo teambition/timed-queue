@@ -45,14 +45,13 @@ describe('timed-queue', function () {
     assert.strictEqual(timedQueue.delay, 1000)
     timedQueue.regulateFreq(-0.05)
     assert.strictEqual(timedQueue.delay, 1000)
-    timedQueue.regulateFreq(-0.2)
-    assert.strictEqual(timedQueue.delay, 800)
-    timedQueue.regulateFreq(-0.2)
-    assert.strictEqual(timedQueue.delay, 640)
-    timedQueue.regulateFreq(-0.9)
-    assert.strictEqual(timedQueue.delay, 100)
-    timedQueue.regulateFreq(1)
-    assert.strictEqual(timedQueue.delay, 200)
+    timedQueue.regulateFreq(-0.06)
+    assert.strictEqual(timedQueue.delay < 1000, true)
+    timedQueue.delay = 1000
+    timedQueue.regulateFreq(0.05)
+    assert.strictEqual(timedQueue.delay, 1000)
+    timedQueue.regulateFreq(0.06)
+    assert.strictEqual(timedQueue.delay > 1000, true)
 
     timedQueue
       .on('scanEnd', function () {
