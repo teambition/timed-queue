@@ -6,10 +6,10 @@
 
 var TimedQueue = require('../index.js')
 var timedQueue = new TimedQueue({interval: 1000 * 2})
-var addLog = console.log.bind(console.log, 'addjob: ')
-var ackLog = console.log.bind(console.log, 'ackjob: ')
+var addLog = console.log.bind(console, 'addjob: ')
+var ackLog = console.log.bind(console, 'ackjob: ')
 
-// connect to redis cluster.
+// connect to redis.
 timedQueue
   .connect()
   .on('error', function (error) {
