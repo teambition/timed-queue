@@ -5,7 +5,7 @@
 // **License:** MIT
 
 var TimedQueue = require('../index.js')
-var timedQueue = new TimedQueue({interval: 1000 * 2})
+var timedQueue = new TimedQueue({prefix: 'TQ', interval: 1000 * 2})
 var addLog = console.log.bind(console, 'addjob: ')
 var ackLog = console.log.bind(console, 'ackjob: ')
 

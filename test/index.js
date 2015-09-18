@@ -304,4 +304,61 @@ describe('timed-queue', function () {
       timedQueue.close()
     })(done)
   })
+
+  it('chaos: 100000 random jobs', function (done) {
+    var timedQueue = new TimedQueue({interval: 1000}).connect()
+    var i = 100000
+    var jobs = []
+    var check = {}
+
+    while (i--) jobs.push(String(i))
+
+    var queues = [timedQueue.queue('test1'), timedQueue.queue('test2'), timedQueue.queue('test3')]
+
+    queues.map(function (queue) {
+      queue.on('job', function (job) {
+        if (check[job.job] !== job.timing) return finish(new Error('uncaughtException: ' + JSON.stringify(job)))
+        delete check[job.job]
+        this.ackjob(job.job)(function (error) {
+          if (error) finish(error)
+        })
+      })
+    })
+
+    addJob()
+
+    function addJob () {
+      if (!jobs.length) return thunk.delay(5000)(finish)
+
+      var i = 0
+      var list = []
+      var time = Date.now() + 2000
+      var seed = Math.ceil(Math.random() * 10000)
+      // push random jobs
+      while (jobs.length && i++ < seed) {
+        var job = jobs.pop()
+        check[job] = time + (i < 3000 ? i : Math.floor(i / 3))
+        list.push(queues[i % 3].addjob(job, check[job]))
+      }
+
+      thunk.all(list)(function (error) {
+        if (error) finish(error)
+        else thunk.delay(seed / 10)(addJob)
+      })
+    }
+
+    function finish (error) {
+      // clear jobs
+      jobs.length = 0
+      // clear queues
+      thunk.all([
+        timedQueue.destroyQueue('test1'),
+        timedQueue.destroyQueue('test2'),
+        timedQueue.destroyQueue('test3')
+      ])(function (err) {
+        if (error || err) throw error || err
+        assert.deepEqual(Object.keys(check), [])
+      })(done)
+    }
+  })
 })

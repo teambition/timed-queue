@@ -155,6 +155,7 @@ var eventQueue = timedQueue.queue('event', {retry: 1000, expire: 5000})
 - `options.accuracy`: {Number} Scanning accuracy. Default to timedQueue's `accuracy`
 
 ### Queue.prototype.addjob(job, timing[, job, timing, ...]) => `thunk` function
+### Queue.prototype.addjob([job, timing, job, timing, ...]) => `thunk` function
 
 Add one or more jobs to the queue. It can be used to update the job's timing.
 
@@ -188,6 +189,7 @@ eventQueue.show('52b3b5f49c2238313600015d')(function (err, res) {
 ```
 
 ### Queue.prototype.deljob(job[, job, ...]) => `thunk` function
+### Queue.prototype.deljob([job, job, ...]) => `thunk` function
 
 Delete one or more jobs.
 
@@ -203,9 +205,10 @@ eventQueue.deljob('52b3b5f49c2238313600015d')(function (err, res) {
 
 It is called by `Queue.prototype.scan`. It should not be called explicitly unless you know what you are doing.
 
-### Queue.prototype.ackjob(job) => `thunk` function
+### Queue.prototype.ackjob(job[, job, ...]) => `thunk` function
+### Queue.prototype.ackjob([job, job, ...]) => `thunk` function
 
-ACK the job.
+ACK one or more jobs.
 
 - `job`: {String} job
 

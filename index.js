@@ -191,7 +191,7 @@ Queue.prototype.addjob = function (job, timing) {
     for (var i = 0, l = args.length || 2; i < l; i += 2) {
       validateString(args[i])
       timing = Math.floor(args[i + 1])
-      if (!timing || timing <= current) throw new Error(String(args[i + 1]) + ' is invalid time')
+      if (!timing || timing <= current) throw new Error(String(args[i + 1]) + ' is invalid time in "' + job + '".')
       data.push(timing, args[i])
     }
 
