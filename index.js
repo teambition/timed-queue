@@ -12,6 +12,10 @@ var EventEmitter = require('events').EventEmitter
 var luaScript = fs.readFileSync(__dirname + '/lua/queue.lua', {encoding: 'utf8'})
 
 var thunk = thunks()
+var listenerCount = EventEmitter.listenerCount ? EventEmitter.listenerCount : function (ctx, type) {
+  ctx.listenerCount(type)
+}
+
 module.exports = TimedQueue
 
 function TimedQueue (options) {
@@ -30,15 +34,10 @@ function TimedQueue (options) {
   this.timer = null
   this.scanTime = 0
   this.scanning = false
-  this.scanQueue = null
+  this.scanCommand = null
   this.delay = this.interval
   this.queues = Object.create(null)
-  this.scanQueue = null
-
-  var ctx = this
-  this.thunk = thunks(function (error) {
-    ctx.emit('error', error)
-  })
+  this.thunk = thunks(bindEmitError(this))
   EventEmitter.call(this)
 }
 util.inherits(TimedQueue, EventEmitter)
@@ -50,18 +49,23 @@ TimedQueue.prototype.connect = function () {
     .on('connect', function () {
       ctx.emit('connect')
     })
-    .on('error', function (error) {
-      ctx.emit('error', error)
-    })
+    .on('error', bindEmitError(this))
     .on('close', function () {
       ctx.emit('close')
     })
 
-  this.scanQueue = this.thunk.persist.call(this, this.redis.script('load', luaScript))
+  var luaSHA = this.thunk.persist(this.redis.script('load', luaScript))
+  this.scanCommand = function () {
+    var args = slice(arguments)
+    return thunk.call(this, luaSHA)(function (_, _luaSHA) {
+      args.unshift(_luaSHA)
+      return ctx.redis.evalsha(args)
+    })
+  }
   // auto scan jobs
   if (this.autoScan) {
-    thunk.delay.call(this, Math.random() * this.interval)(function () {
-      this.scan()
+    thunk.delay(Math.random() * this.interval)(function () {
+      ctx.scan()
     })
   }
   return this
@@ -85,8 +89,8 @@ TimedQueue.prototype.destroyQueue = function (queueName) {
       redis.del(queue.queueOptionsKey),
       redis.del(queue.activeQueueKey),
       redis.del(queue.queueKey)
-    ])(function (err) {
-      done(err, null)
+    ])(function (err, res) {
+      done(err)
     })
   })
 }
@@ -96,35 +100,28 @@ TimedQueue.prototype.scan = function () {
 
   var ctx = this
   var scanStart
+  var emitError = bindEmitError(this)
   this.scanning = true
   this.scanTime = scanStart = Date.now()
 
   this.redis.smembers(this.queuesKey)(function (err, queues) {
     if (err) throw err
     ctx.emit('scanStart', queues.length)
-    return thunk.seq(queues.map(function (queue) {
+    return thunk.all(queues.map(function (queue) {
       return ctx.queue(queue).scan()
     }))
   })(function (err, queueScores) {
-    if (err) ctx.emit('error', err)
+    if (err) emitError(err)
     else {
       ctx.emit('scanEnd', queueScores.length, Date.now() - scanStart)
-
-      var count = 0
-      var score = queueScores.reduce(function (prev, scores) {
-        return prev + scores.reduce(function (p, s) {
-          count++
-          return p + s
-        }, 0)
-      }, 0)
-      if (count) ctx.regulateFreq(score / count)
+      ctx.regulateFreq(scoresDeviation(queueScores))
     }
 
     if (!ctx.timer && ctx.scanning) {
       ctx.scanning = false
       ctx.scan()
     } else ctx.scanning = false
-  })
+  })(emitError)
 
   clearTimeout(this.timer)
   this.timer = setTimeout(function () {
@@ -242,12 +239,10 @@ Queue.prototype.getjobs = function (scanActive) {
     var root = this.root
     var timestamp = Date.now()
 
-    thunk(root.scanQueue)(function (_, luaSHA) {
-      return root.redis.evalsha(luaSHA, 3,
-        ctx.queueKey, ctx.activeQueueKey, ctx.queueOptionsKey,
-        root.count, root.retry, root.expire, root.accuracy, timestamp, +(scanActive !== false)
-      )
-    })(function (err, res) {
+    return root.scanCommand(3,
+      this.queueKey, this.activeQueueKey, this.queueOptionsKey,
+      root.count, root.retry, root.expire, root.accuracy, timestamp, +(scanActive !== false)
+    )(function (err, res) {
       if (err) throw err
       return new ScanResult(ctx.name, timestamp, res)
     })(done)
@@ -267,8 +262,7 @@ Queue.prototype.scan = function () {
   return thunk.call(this, function (done) {
     var ctx = this
     var scores = []
-    var listener = ctx.listenerCount ? ctx.listenerCount('job') : EventEmitter.listenerCount(ctx, 'job')
-    if (!listener) throw new Error('"job" listener required!')
+    if (!listenerCount(ctx, 'job')) return done(new Error('"job" listener required!'))
     getjobs()
 
     function getjobs (err, res) {
@@ -324,6 +318,26 @@ function ScanResult (name, timestamp, res) {
   this.jobs = []
   for (var i = 0, l = jobs.length - 2; i < l; i += 3) {
     this.jobs.push(new Job(name, jobs[i], jobs[i + 1], timestamp, jobs[i + 2]))
+  }
+}
+
+function scoresDeviation (queueScores) {
+  var count = 0
+  var score = queueScores.reduce(function (prev, scores) {
+    return prev + scores.reduce(function (p, s) {
+      count++
+      return p + s
+    }, 0)
+  }, 0)
+  return count ? (score / count) : 0
+}
+
+function bindEmitError (ctx) {
+  return function (error) {
+    if (error == null) return
+    process.nextTick(function () {
+      ctx.emit('error', error)
+    })
   }
 }
 
