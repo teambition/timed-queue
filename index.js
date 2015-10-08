@@ -34,7 +34,6 @@ function TimedQueue (options) {
   this.timer = null
   this.scanTime = 0
   this.scanning = false
-  this.scanCommand = null
   this.delay = this.interval
   this.queues = Object.create(null)
   this.thunk = thunks(bindEmitError(this))
@@ -54,14 +53,6 @@ TimedQueue.prototype.connect = function () {
       ctx.emit('close')
     })
 
-  var luaSHA = this.thunk.persist(this.redis.script('load', luaScript))
-  this.scanCommand = function () {
-    var args = slice(arguments)
-    return thunk.call(this, luaSHA)(function (_, _luaSHA) {
-      args.unshift(_luaSHA)
-      return ctx.redis.evalsha(args)
-    })
-  }
   // auto scan jobs
   if (this.autoScan) {
     thunk.delay(Math.random() * this.interval)(function () {
@@ -239,7 +230,7 @@ Queue.prototype.getjobs = function (scanActive) {
     var root = this.root
     var timestamp = Date.now()
 
-    return root.scanCommand(3,
+    return root.redis.evalauto(luaScript, 3,
       this.queueKey, this.activeQueueKey, this.queueOptionsKey,
       root.count, root.retry, root.expire, root.accuracy, timestamp, +(scanActive !== false)
     )(function (err, res) {
