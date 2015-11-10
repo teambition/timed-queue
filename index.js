@@ -41,17 +41,22 @@ function TimedQueue (options) {
 }
 util.inherits(TimedQueue, EventEmitter)
 
-TimedQueue.prototype.connect = function () {
+TimedQueue.prototype.connect = function (redisClient) {
   var ctx = this
   if (this.redis) return this
-  this.redis = redis.createClient.apply(null, arguments)
-    .on('connect', function () {
-      ctx.emit('connect')
-    })
-    .on('error', bindEmitError(this))
-    .on('close', function () {
-      ctx.emit('close')
-    })
+  if (redisClient && redisClient.info && typeof redisClient.evalauto === 'function') {
+    this.redis = redisClient
+  } else {
+    this.redis = redis.createClient.apply(null, arguments)
+  }
+
+  this.redis.on('connect', function () {
+    ctx.emit('connect')
+  })
+  .on('error', bindEmitError(this))
+  .on('close', function () {
+    ctx.emit('close')
+  })
 
   // auto scan jobs
   if (this.autoScan) {

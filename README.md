@@ -102,8 +102,9 @@ var timedQueue = new TimedQueue()
 - timedQueue.on('scanEnd', function (queuesLength, timeConsuming) {})
 
 ### TimedQueue.prototype.connect([host, options]) => `this`
+### TimedQueue.prototype.connect(redisClient) => `this`
 
-Connect to redis. Arguments are the same as [thunk-redis](https://github.com/thunks/thunk-redis)'s `createClient`
+Connect to redis. Arguments are the same as [thunk-redis](https://github.com/thunks/thunk-redis)'s `createClient`, or give a thunk-redis instance.
 
 ```js
 timedQueue.connect()

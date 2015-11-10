@@ -7,6 +7,7 @@
 
 var assert = require('assert')
 var thunk = require('thunks')()
+var redis = require('thunk-redis')
 var TimedQueue = require('../index')
 
 describe('timed-queue', function () {
@@ -36,7 +37,7 @@ describe('timed-queue', function () {
         timedQueue.close()
         done()
       })
-    timedQueue.connect()
+    timedQueue.connect(redis.createClient())
   })
 
   it('timedQueue.scan, timedQueue.regulateFreq, timedQueue.close', function (done) {
@@ -61,7 +62,7 @@ describe('timed-queue', function () {
         }
         if (scanCount > 10) throw new Error('Should stopped!')
       })
-    timedQueue.connect()
+    timedQueue.connect(redis.createClient())
   })
 
   it('timedQueue.queue, queue.addjob, queue.show, queue.deljob, timedQueue.destroyQueue', function (done) {
@@ -102,7 +103,7 @@ describe('timed-queue', function () {
 
   it('queue.init, queue.getjobs, queue.showActive, queue.len, queue.ackjob', function (done) {
     var time = Date.now()
-    var timedQueue = new TimedQueue({autoScan: false}).connect()
+    var timedQueue = new TimedQueue({autoScan: false}).connect(redis.createClient())
     var queue = timedQueue.queue('test', {
       count: 3,
       retry: 1000,
@@ -218,7 +219,7 @@ describe('timed-queue', function () {
     var jobs = []
     var tasks = []
     var time = Date.now() + 100
-    var timedQueue = new TimedQueue({autoScan: false}).connect()
+    var timedQueue = new TimedQueue({autoScan: false}).connect(redis.createClient())
     var queue = timedQueue.queue('test', {
       count: 8,
       retry: 1000,
@@ -306,7 +307,7 @@ describe('timed-queue', function () {
   })
 
   it('chaos: 100000 random jobs', function (done) {
-    var timedQueue = new TimedQueue({interval: 1000}).connect()
+    var timedQueue = new TimedQueue({interval: 1000}).connect(redis.createClient())
     var i = 100000
     var jobs = []
     var check = {}
