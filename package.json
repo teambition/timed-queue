@@ -4,7 +4,7 @@
   "authors": [
     "Yan Qing <admin@zensh.com>"
   ],
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "index.js",
   "repository": {
     "type": "git",
@@ -20,13 +20,13 @@
     "distributed"
   ],
   "dependencies": {
-    "thunk-redis": "^1.2.2",
-    "thunks": "^4.0.1"
+    "thunk-redis": "^1.2.4",
+    "thunks": "^4.1.0"
   },
   "devDependencies": {
     "mocha": "^2.3.4",
     "standard": "^5.4.1",
-    "thunk-mocha": "^1.0.0"
+    "thunk-mocha": "^1.0.1"
   },
   "scripts": {
     "test": "standard & mocha -t 120000 -r thunk-mocha test/index.js"
