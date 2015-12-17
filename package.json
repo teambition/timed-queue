@@ -4,7 +4,7 @@
   "authors": [
     "Yan Qing <admin@zensh.com>"
   ],
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "index.js",
   "repository": {
     "type": "git",
@@ -20,7 +20,7 @@
     "distributed"
   ],
   "dependencies": {
-    "thunk-redis": "^1.2.4",
+    "thunk-redis": "^1.3.0",
     "thunks": "^4.1.0"
   },
   "devDependencies": {

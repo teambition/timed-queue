@@ -16,6 +16,8 @@ var listenerCount = EventEmitter.listenerCount ? EventEmitter.listenerCount : fu
   ctx.listenerCount(type)
 }
 
+var slice = redis.slice
+
 module.exports = TimedQueue
 
 function TimedQueue (options) {
@@ -176,7 +178,7 @@ Queue.prototype.init = function (options) {
 }
 
 Queue.prototype.addjob = function (job, timing) {
-  var args = Array.isArray(job) ? job : slice(arguments)
+  var args = slice(Array.isArray(job) ? job : arguments)
   return thunk.call(this, function (done) {
     var data = [this.queueKey]
     var current = Date.now()
@@ -212,7 +214,7 @@ Queue.prototype.show = function (job) {
 }
 
 Queue.prototype.deljob = function (job) {
-  var args = Array.isArray(job) ? job : slice(arguments)
+  var args = slice(Array.isArray(job) ? job : arguments)
   return thunk.call(this, function (done) {
     var ctx = this
     for (var i = 0, l = args.length || 1; i < l; i++) validateString(args[i])
@@ -246,7 +248,7 @@ Queue.prototype.getjobs = function (scanActive) {
 }
 
 Queue.prototype.ackjob = function (job) {
-  var args = Array.isArray(job) ? job : slice(arguments)
+  var args = slice(Array.isArray(job) ? job : arguments)
   return thunk.call(this, function (done) {
     for (var i = 0, l = args.length || 1; i < l; i++) validateString(args[i])
     args.unshift(this.activeQueueKey)
@@ -335,15 +337,6 @@ function bindEmitError (ctx) {
       ctx.emit('error', error)
     })
   }
-}
-
-function slice (args, start) {
-  start = start || 0
-  if (start >= args.length) return []
-  var len = args.length
-  var ret = Array(len - start)
-  while (len-- > start) ret[len - start] = args[len]
-  return ret
 }
 
 function validateString (str) {
