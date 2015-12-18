@@ -349,6 +349,8 @@ describe('timed-queue', function () {
     }
 
     function finish (error) {
+      // debug for travis-ci
+      if (error) console.error(error.stack)
       // clear jobs
       jobs.length = 0
       // clear queues
