@@ -10,7 +10,7 @@ var timedQueue = new TimedQueue({autoScan: false})
 
 timedQueue.connect()
 
-var queue = timedQueue.queue('performance').on('job', function (job) {/* console.log(job) */})
+var queue = timedQueue.queue('performance').on('job', function (job) { /* console.log(job) */ })
 
 thunk(function *() {
   console.log('jobs:', yield queue.len())

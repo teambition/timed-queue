@@ -5,13 +5,15 @@
 // **License:** MIT
 
 var fs = require('fs')
+var path = require('path')
 var util = require('util')
 var thunks = require('thunks')
 var redis = require('thunk-redis')
 var EventEmitter = require('events').EventEmitter
 
 var thunk = thunks()
-var luaScript = fs.readFileSync(__dirname + '/queue.lua', {encoding: 'utf8'})
+var luaScript = fs.readFileSync(path.join(__dirname, 'queue.lua'), {encoding: 'utf8'})
+
 var listenerCount = EventEmitter.listenerCount ? EventEmitter.listenerCount : function (ctx, type) {
   ctx.listenerCount(type)
 }
