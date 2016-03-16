@@ -28,7 +28,7 @@ function TimedQueue (options) {
   this.prefix = options.prefix || 'TIMEDQ'
   this.queuesKey = '{' + this.prefix + '}:QUEUES'
   this.count = Math.floor(options.count) || 64
-  this.interval = Math.floor(options.interval) || 1000 * 120
+  this.interval = Math.floor(options.interval) || 1000 * 60
   this.expire = Math.floor(options.expire) || this.interval * 5
   this.retry = Math.floor(options.retry) || Math.floor(this.interval / 2)
   this.accuracy = Math.floor(options.accuracy) || Math.floor(this.interval / 5)
@@ -150,7 +150,7 @@ TimedQueue.prototype.close = function () {
 // x < 0 | 1 / (1 - x)
 TimedQueue.prototype.regulateFreq = function (factor) {
   if (factor < -0.05) this.delay = Math.max(this.delay / (1 - factor), this.interval / 10)
-  else if (factor > 0.05) this.delay = Math.min(this.delay * (2 - 1 / (1 + factor)), this.interval * 5)
+  else if (factor > 0.05) this.delay = Math.min(this.delay * (2 - 1 / (1 + factor)), this.interval)
   return this
 }
 

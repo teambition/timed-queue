@@ -83,7 +83,7 @@ Return a `timedQueue` client. It is an EventEmitter instance.
 
 - `options.prefix`: {String} Redis key's prefix, or namespace. Default to `"TIMEDQ"`
 - `options.count`: {Number} The maximum job count for queue's `getjobs` method. Default to `64`
-- `options.interval`: {Number} Interval time for scanning. Default to `1000 * 120` ms
+- `options.interval`: {Number} Interval time for scanning. Default to `1000 * 60` ms
 - `options.retry`: {Number} Retry time for a job. A job that has been actived but has not been ACK in `retry` time will be actived again. Default to `interval / 2` ms
 - `options.expire`: {Number} Expiration time for a job. A job that has been actived and has not been ACK in `expire` time will be removed from the queue. Default to `interval * 5` ms
 - `options.accuracy`: {Number} Scanning accuracy. Default to `interval / 5`

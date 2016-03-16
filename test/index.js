@@ -52,7 +52,7 @@ describe('timed-queue', function () {
     timedQueue.regulateFreq(0.05)
     assert.strictEqual(timedQueue.delay, 1000)
     timedQueue.regulateFreq(0.06)
-    assert.strictEqual(timedQueue.delay > 1000, true)
+    assert.strictEqual(timedQueue.delay, 1000)
 
     timedQueue
       .on('scanEnd', function () {
