@@ -4,5 +4,6 @@ node_js:
   - "0.12"
   - "4"
   - "5"
+sudo: false
 services:
   - redis-server

@@ -3,15 +3,17 @@
 // **Github:** https://github.com/teambition/timed-queue
 //
 // **License:** MIT
-/* global describe, it, beforeEach */
 
+var tman = require('tman')
 var assert = require('assert')
 var thunk = require('thunks')()
 var redis = require('thunk-redis')
 var TimedQueue = require('../index')
 
-describe('timed-queue', function () {
-  beforeEach(function (done) {
+tman.suite('timed-queue', function () {
+  this.timeout(50000)
+
+  tman.beforeEach(function (done) {
     var timedQueue = new TimedQueue({autoScan: false}).connect()
     timedQueue.queue('test')
     timedQueue.destroyQueue('test')(function () {
@@ -19,7 +21,7 @@ describe('timed-queue', function () {
     })(done)
   })
 
-  it('new TimedQueue()', function (done) {
+  tman.it('new TimedQueue()', function (done) {
     var timedQueue = new TimedQueue({interval: 2000})
     var events = []
     timedQueue
@@ -40,7 +42,7 @@ describe('timed-queue', function () {
     timedQueue.connect(redis.createClient())
   })
 
-  it('timedQueue.scan, timedQueue.regulateFreq, timedQueue.close', function (done) {
+  tman.it('timedQueue.scan, timedQueue.regulateFreq, timedQueue.close', function (done) {
     var timedQueue = new TimedQueue({interval: 1000})
     var scanCount = 0
     assert.strictEqual(timedQueue.delay, 1000)
@@ -65,7 +67,7 @@ describe('timed-queue', function () {
     timedQueue.connect(redis.createClient())
   })
 
-  it('timedQueue.queue, queue.addjob, queue.show, queue.deljob, timedQueue.destroyQueue', function (done) {
+  tman.it('timedQueue.queue, queue.addjob, queue.show, queue.deljob, timedQueue.destroyQueue', function (done) {
     var timedQueue = new TimedQueue().connect()
     var queue = timedQueue.queue('test')
 
@@ -101,7 +103,7 @@ describe('timed-queue', function () {
     })(done)
   })
 
-  it('queue.init, queue.getjobs, queue.showActive, queue.len, queue.ackjob', function (done) {
+  tman.it('queue.init, queue.getjobs, queue.showActive, queue.len, queue.ackjob', function (done) {
     var time = Date.now()
     var timedQueue = new TimedQueue({autoScan: false}).connect(redis.createClient())
     var queue = timedQueue.queue('test', {
@@ -215,7 +217,7 @@ describe('timed-queue', function () {
     })(done)
   })
 
-  it('queue.scan', function (done) {
+  tman.it('queue.scan', function (done) {
     var jobs = []
     var tasks = []
     var time = Date.now() + 100
@@ -306,7 +308,7 @@ describe('timed-queue', function () {
     })(done)
   })
 
-  it('chaos: 100000 random jobs', function (done) {
+  tman.it('chaos: 100000 random jobs', function (done) {
     var timedQueue = new TimedQueue({interval: 1000}).connect(redis.createClient())
     var i = 100000
     var jobs = []
