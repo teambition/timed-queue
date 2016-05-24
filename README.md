@@ -4,6 +4,7 @@ Distributed timed job queue, backed by redis.
 
 [![NPM version][npm-image]][npm-url]
 [![Build Status][travis-image]][travis-url]
+[![Downloads][downloads-image]][downloads-url]
 
 ![timed-queue](https://raw.githubusercontent.com/teambition/timed-queue/master/docs/timed-queue.png)
 
@@ -248,3 +249,6 @@ eventQueue.showActive()(function (err, res) {
 
 [travis-url]: https://travis-ci.org/teambition/timed-queue
 [travis-image]: http://img.shields.io/travis/teambition/timed-queue.svg
+
+[downloads-url]: https://npmjs.org/package/timed-queue
+[downloads-image]: http://img.shields.io/npm/dm/timed-queue.svg?style=flat-square

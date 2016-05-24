@@ -12,7 +12,7 @@ timedQueue.connect()
 
 var queue = timedQueue.queue('performance').on('job', function (job) { /* console.log(job) */ })
 
-thunk(function *() {
+thunk(function * () {
   console.log('jobs:', yield queue.len())
   console.log('add jobs:')
   var id = 0
