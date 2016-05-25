@@ -106,6 +106,11 @@ TimedQueue.prototype.scan = function () {
 
   this.redis.smembers(this.queuesKey)(function (err, queues) {
     if (err) throw err
+
+    queues = queues.filter(function (queueName) {
+      return ctx.queues[queueName]
+    })
+
     ctx.emit('scanStart', queues.length)
     return thunk.all(queues.map(function (queue) {
       return ctx.queue(queue).scan()
