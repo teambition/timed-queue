@@ -4,332 +4,286 @@
 //
 // **License:** MIT
 
-var fs = require('fs')
-var path = require('path')
-var util = require('util')
-var thunks = require('thunks')
-var redis = require('thunk-redis')
-var EventEmitter = require('events').EventEmitter
+const fs = require('fs')
+const path = require('path')
+const thunks = require('thunks')
+const redis = require('thunk-redis')
+const EventEmitter = require('events').EventEmitter
 
-var thunk = thunks()
-var luaScript = fs.readFileSync(path.join(__dirname, 'queue.lua'), {encoding: 'utf8'})
+const thunk = thunks()
+const slice = Array.prototype.slice
+const luaScript = fs.readFileSync(path.join(__dirname, 'queue.lua'), {encoding: 'utf8'})
 
-var listenerCount = EventEmitter.listenerCount ? EventEmitter.listenerCount : function (ctx, type) {
-  ctx.listenerCount(type)
-}
+class TimedQueue extends EventEmitter {
+  constructor (options) {
+    super()
+    options = options || {}
 
-var slice = redis.slice
+    this.prefix = options.prefix || 'TIMEDQ'
+    this.queuesKey = '{' + this.prefix + '}:QUEUES'
+    this.count = Math.floor(options.count) || 64
+    this.interval = Math.floor(options.interval) || 1000 * 60
+    this.expire = Math.floor(options.expire) || this.interval * 5
+    this.retry = Math.floor(options.retry) || Math.floor(this.interval / 2)
+    this.accuracy = Math.floor(options.accuracy) || Math.floor(this.interval / 5)
+    this.autoScan = options.autoScan !== false
 
-module.exports = TimedQueue
-
-function TimedQueue (options) {
-  options = options || {}
-
-  this.prefix = options.prefix || 'TIMEDQ'
-  this.queuesKey = '{' + this.prefix + '}:QUEUES'
-  this.count = Math.floor(options.count) || 64
-  this.interval = Math.floor(options.interval) || 1000 * 60
-  this.expire = Math.floor(options.expire) || this.interval * 5
-  this.retry = Math.floor(options.retry) || Math.floor(this.interval / 2)
-  this.accuracy = Math.floor(options.accuracy) || Math.floor(this.interval / 5)
-  this.autoScan = options.autoScan !== false
-
-  this.redis = null
-  this.timer = null
-  this.scanTime = 0
-  this.scanning = false
-  this.delay = this.interval
-  this.queues = Object.create(null)
-  this.thunk = thunks(bindEmitError(this))
-  EventEmitter.call(this)
-}
-util.inherits(TimedQueue, EventEmitter)
-
-TimedQueue.prototype.connect = function (redisClient) {
-  var ctx = this
-  if (this.redis) return this
-  if (redisClient && redisClient.info && typeof redisClient.evalauto === 'function') {
-    this.redis = redisClient
-  } else {
-    this.redis = redis.createClient.apply(null, arguments)
+    this.redis = null
+    this.timer = null
+    this.scanTime = 0
+    this.scanning = false
+    this.delay = this.interval
+    this.queues = Object.create(null)
+    this.thunk = thunks((err) => err && this.emit('error', err))
   }
 
-  this.redis.on('connect', function () {
-    ctx.emit('connect')
-  })
-  .on('error', bindEmitError(this))
-  .on('close', function () {
-    ctx.emit('close')
-  })
+  connect (redisClient) {
+    if (this.redis) return this
+    if (redisClient && redisClient.info && typeof redisClient.evalauto === 'function') {
+      this.redis = redisClient
+    } else {
+      this.redis = redis.createClient.apply(null, arguments)
+    }
 
-  // auto scan jobs
-  if (this.autoScan) {
-    thunk.delay(Math.random() * this.interval)(function () {
-      ctx.scan()
+    this.redis.on('connect', () => this.emit('connect'))
+    .on('error', (err) => this.emit('error', err))
+    .on('close', () => this.emit('close'))
+
+    // auto scan jobs
+    if (this.autoScan) {
+      thunk.delay(Math.random() * this.interval)(() => this.scan())
+    }
+    return this
+  }
+
+  queue (queueName, options) {
+    validateString(queueName)
+    if (!this.queues[queueName]) this.queues[queueName] = new Queue(this, queueName, options)
+    else if (options) this.queues[queueName].init(options)
+    return this.queues[queueName]
+  }
+
+  destroyQueue (queueName) {
+    return thunk.call(this, function * () {
+      let redis = this.redis
+      let queue = this.queue(queueName)
+
+      delete this.queues[queueName]
+      yield [
+        redis.srem(this.queuesKey, queue.name),
+        redis.del(queue.queueOptionsKey),
+        redis.del(queue.activeQueueKey),
+        redis.del(queue.queueKey)
+      ]
     })
   }
-  return this
+
+  scan () {
+    if (this.scanning || !this.redis) return this
+
+    let scanStart
+    this.scanning = true
+    this.scanTime = scanStart = Date.now()
+
+    this.thunk(function * () {
+      let queues = yield this.redis.smembers(this.queuesKey)
+      queues = queues.filter((queueName) => this.queues[queueName])
+      this.emit('scanStart', queues.length)
+
+      let queueScores = yield queues.map((queue) => this.queue(queue).scan())
+      this.emit('scanEnd', queueScores.length, Date.now() - scanStart)
+      this.regulateFreq(scoresDeviation(queueScores))
+
+      if (!this.timer && this.scanning) {
+        this.scanning = false
+        this.scan()
+      } else this.scanning = false
+    })()
+
+    clearTimeout(this.timer)
+    this.timer = setTimeout(() => {
+      this.timer = null
+      if (!this.scanning) this.scan()
+    }, this.delay)
+
+    return this
+  }
+
+  stop () {
+    clearTimeout(this.timer)
+    this.scanning = false
+    this.timer = null
+    return this
+  }
+
+  close () {
+    this.stop()
+    this.redis.clientEnd()
+    this.redis = null
+    return this
+  }
+
+  // x > 0 | 2 - 1 / (1 + x)
+  // x < 0 | 1 / (1 - x)
+  regulateFreq (factor) {
+    if (factor < -0.05) this.delay = Math.max(this.delay / (1 - factor), this.interval / 10)
+    else if (factor > 0.05) this.delay = Math.min(this.delay * (2 - 1 / (1 + factor)), this.interval)
+    return this
+  }
 }
 
-TimedQueue.prototype.queue = function (queueName, options) {
-  validateString(queueName)
-  if (!this.queues[queueName]) this.queues[queueName] = new Queue(this, queueName, options)
-  else if (options) this.queues[queueName].init(options)
-  return this.queues[queueName]
-}
+class Queue extends EventEmitter {
+  constructor (timedQueue, queueName, options) {
+    super()
 
-TimedQueue.prototype.destroyQueue = function (queueName) {
-  return thunk.call(this, function (done) {
-    var redis = this.redis
-    var queue = this.queue(queueName)
+    this.root = timedQueue
+    this.name = queueName
+    this.queueKey = '{' + timedQueue.prefix + ':' + queueName + '}' // hash tag
+    this.activeQueueKey = this.queueKey + ':-'
+    this.queueOptionsKey = this.queueKey + ':O'
+    this.init(options)
+  }
 
-    delete this.queues[queueName]
-    thunk.all([
-      redis.srem(this.queuesKey, queue.name),
-      redis.del(queue.queueOptionsKey),
-      redis.del(queue.activeQueueKey),
-      redis.del(queue.queueKey)
-    ])(function (err, res) {
-      done(err)
-    })
-  })
-}
+  init (options) {
+    let root = this.root
+    root.thunk(root.redis.sadd(root.queuesKey, this.name))()
 
-TimedQueue.prototype.scan = function () {
-  if (this.scanning || !this.redis) return this
+    if (!options) return this
+    root.thunk(root.redis.hmset(this.queueOptionsKey, {
+      count: options.count || root.count,
+      retry: options.retry || root.retry,
+      expire: options.expire || root.expire,
+      accuracy: options.accuracy || root.accuracy
+    }))()
+    return this
+  }
 
-  var ctx = this
-  var scanStart
-  var emitError = bindEmitError(this)
-  this.scanning = true
-  this.scanTime = scanStart = Date.now()
+  addjob (job, timing) {
+    let args = slice.call(Array.isArray(job) ? job : arguments)
+    return thunk.call(this, function * () {
+      let data = [this.queueKey]
+      let current = Date.now()
 
-  this.redis.smembers(this.queuesKey)(function (err, queues) {
-    if (err) throw err
-
-    queues = queues.filter(function (queueName) {
-      return ctx.queues[queueName]
-    })
-
-    ctx.emit('scanStart', queues.length)
-    return thunk.all(queues.map(function (queue) {
-      return ctx.queue(queue).scan()
-    }))
-  })(function (err, queueScores) {
-    if (err) emitError(err)
-    else {
-      ctx.emit('scanEnd', queueScores.length, Date.now() - scanStart)
-      ctx.regulateFreq(scoresDeviation(queueScores))
-    }
-
-    if (!ctx.timer && ctx.scanning) {
-      ctx.scanning = false
-      ctx.scan()
-    } else ctx.scanning = false
-  })(emitError)
-
-  clearTimeout(this.timer)
-  this.timer = setTimeout(function () {
-    ctx.timer = null
-    if (!ctx.scanning) ctx.scan()
-  }, this.delay)
-
-  return this
-}
-
-TimedQueue.prototype.stop = function () {
-  clearTimeout(this.timer)
-  this.scanning = false
-  this.timer = null
-  return this
-}
-
-TimedQueue.prototype.close = function () {
-  this.stop()
-  this.redis.clientEnd()
-  this.redis = null
-  return this
-}
-
-// x > 0 | 2 - 1 / (1 + x)
-// x < 0 | 1 / (1 - x)
-TimedQueue.prototype.regulateFreq = function (factor) {
-  if (factor < -0.05) this.delay = Math.max(this.delay / (1 - factor), this.interval / 10)
-  else if (factor > 0.05) this.delay = Math.min(this.delay * (2 - 1 / (1 + factor)), this.interval)
-  return this
-}
-
-function Queue (timedQueue, queueName, options) {
-  this.root = timedQueue
-  this.name = queueName
-  this.queueKey = '{' + timedQueue.prefix + ':' + queueName + '}' // hash tag
-  this.activeQueueKey = this.queueKey + ':-'
-  this.queueOptionsKey = this.queueKey + ':O'
-  this.init(options)
-  EventEmitter.call(this)
-}
-util.inherits(Queue, EventEmitter)
-
-Queue.prototype.init = function (options) {
-  var root = this.root
-  root.thunk(root.redis.sadd(root.queuesKey, this.name))()
-
-  if (!options) return this
-  root.thunk(root.redis.hmset(this.queueOptionsKey, {
-    count: options.count || root.count,
-    retry: options.retry || root.retry,
-    expire: options.expire || root.expire,
-    accuracy: options.accuracy || root.accuracy
-  }))()
-  return this
-}
-
-Queue.prototype.addjob = function (job, timing) {
-  var args = slice(Array.isArray(job) ? job : arguments)
-  return thunk.call(this, function (done) {
-    var data = [this.queueKey]
-    var current = Date.now()
-
-    for (var i = 0, l = args.length || 2; i < l; i += 2) {
-      validateString(args[i])
-      timing = Math.floor(args[i + 1])
-      if (!timing || timing <= current) throw new Error(String(args[i + 1]) + ' is invalid time in "' + job + '".')
-      data.push(timing, args[i])
-    }
-
-    this.root.redis.zadd(data)(done)
-  })
-}
-
-Queue.prototype.show = function (job) {
-  return thunk.call(this, function (done) {
-    var ctx = this
-    validateString(job)
-
-    ctx.root.redis.zscore(ctx.queueKey, job)(function (err, timing) {
-      if (err) throw err
-      if (timing) return new Job(ctx.name, job, timing, 0, 0)
-
-      return this.hget(ctx.activeQueueKey, job)(function (err, times) {
-        if (err) throw err
-        if (!times) return null
-        times = times.split(':')
-        return new Job(ctx.name, job, times[0], times[1], times.length - 2)
-      })
-    })(done)
-  })
-}
-
-Queue.prototype.deljob = function (job) {
-  var args = slice(Array.isArray(job) ? job : arguments)
-  return thunk.call(this, function (done) {
-    var ctx = this
-    for (var i = 0, l = args.length || 1; i < l; i++) validateString(args[i])
-
-    args.unshift(ctx.queueKey)
-    ctx.root.redis.zrem(args)(function (err, count) {
-      if (err) throw err
-      args[0] = ctx.activeQueueKey
-      return this.hdel(args)(function (err, _count) {
-        if (err) throw err
-        return count + _count
-      })
-    })(done)
-  })
-}
-
-Queue.prototype.getjobs = function (scanActive) {
-  return thunk.call(this, function (done) {
-    var ctx = this
-    var root = this.root
-    var timestamp = Date.now()
-
-    return root.redis.evalauto(luaScript, 3,
-      this.queueKey, this.activeQueueKey, this.queueOptionsKey,
-      root.count, root.retry, root.expire, root.accuracy, timestamp, +(scanActive !== false)
-    )(function (err, res) {
-      if (err) throw err
-      return new ScanResult(ctx.name, timestamp, res)
-    })(done)
-  })
-}
-
-Queue.prototype.ackjob = function (job) {
-  var args = slice(Array.isArray(job) ? job : arguments)
-  return thunk.call(this, function (done) {
-    for (var i = 0, l = args.length || 1; i < l; i++) validateString(args[i])
-    args.unshift(this.activeQueueKey)
-    return this.root.redis.hdel(args)(done)
-  })
-}
-
-Queue.prototype.scan = function () {
-  return thunk.call(this, function (done) {
-    var ctx = this
-    var scores = []
-    if (!listenerCount(ctx, 'job')) return done(new Error('"job" listener required!'))
-    getjobs()
-
-    function getjobs (err, res) {
-      if (err) return done(err)
-      if (res) {
-        res.jobs.map(function (job) {
-          if (!job.retryCount) scores.push((job.timing - job.active) / res.retry)
-          process.nextTick(function () {
-            ctx.emit('job', job)
-          })
-        })
-        if (!res.hasMore) return done(null, scores)
+      for (let i = 0, l = args.length || 2; i < l; i += 2) {
+        validateString(args[i])
+        timing = Math.floor(args[i + 1])
+        if (!timing || timing <= current) throw new Error(String(args[i + 1]) + ' is invalid time in "' + job + '".')
+        data.push(timing, args[i])
       }
-      ctx.getjobs(!res)(getjobs)
-    }
-  })
-}
 
-Queue.prototype.len = function () {
-  return thunk.call(this, function (done) {
-    return this.root.redis.zcard(this.queueKey)(done)
-  })
-}
+      return yield this.root.redis.zadd(data)
+    })
+  }
 
-Queue.prototype.showActive = function () {
-  return thunk.call(this, function (done) {
-    var ctx = this
-    return this.root.redis.hgetall(this.activeQueueKey)(function (err, res) {
-      if (err) throw err
+  show (job) {
+    return thunk.call(this, function * () {
+      validateString(job)
+
+      let timing = yield this.root.redis.zscore(this.queueKey, job)
+      if (timing) return new Job(this.name, job, timing, 0, 0)
+
+      let times = yield this.root.redis.hget(this.activeQueueKey, job)
+      if (!times) return null
+      times = times.split(':')
+      return new Job(this.name, job, times[0], times[1], times.length - 2)
+    })
+  }
+
+  deljob (job) {
+    let args = slice.call(Array.isArray(job) ? job : arguments)
+    return thunk.call(this, function * () {
+      for (let i = 0, l = args.length || 1; i < l; i++) validateString(args[i])
+
+      args.unshift(this.queueKey)
+      let count = yield this.root.redis.zrem(args)
+      args[0] = this.activeQueueKey
+      let _count = yield this.root.redis.hdel(args)
+      return count + _count
+    })
+  }
+
+  getjobs (scanActive) {
+    return thunk.call(this, function * () {
+      let root = this.root
+      let timestamp = Date.now()
+
+      let res = yield root.redis.evalauto(luaScript, 3,
+        this.queueKey, this.activeQueueKey, this.queueOptionsKey,
+        root.count, root.retry, root.expire, root.accuracy, timestamp, +(scanActive !== false))
+      return new ScanResult(this.name, timestamp, res)
+    })
+  }
+
+  ackjob (job) {
+    let args = slice.call(Array.isArray(job) ? job : arguments)
+    return thunk.call(this, function * () {
+      for (let i = 0, l = args.length || 1; i < l; i++) validateString(args[i])
+      args.unshift(this.activeQueueKey)
+      return yield this.root.redis.hdel(args)
+    })
+  }
+
+  scan () {
+    return thunk.call(this, function * () {
+      let scores = []
+      if (!this.listenerCount('job')) throw new Error('"job" listener required!')
+
+      let res = null
+      while (true) {
+        res = yield this.getjobs(!res)
+        if (res) {
+          res.jobs.map((job) => {
+            if (!job.retryCount) scores.push((job.timing - job.active) / res.retry)
+            process.nextTick(() => this.emit('job', job))
+          })
+          if (!res.hasMore) return scores
+        }
+      }
+    })
+  }
+
+  len () {
+    return thunk.call(this, function * () {
+      return yield this.root.redis.zcard(this.queueKey)
+    })
+  }
+
+  showActive () {
+    return thunk.call(this, function * () {
+      let res = yield this.root.redis.hgetall(this.activeQueueKey)
       return Object.keys(res)
-        .map(function (job) {
-          var times = res[job].split(':')
-          return new Job(ctx.name, job, times[0], times[1], times.length - 2)
-        }).sort(function (a, b) {
-          return a.timing - b.timing
-        })
-    })(done)
-  })
+        .map((job) => {
+          let times = res[job].split(':')
+          return new Job(this.name, job, times[0], times[1], times.length - 2)
+        }).sort((a, b) => a.timing - b.timing)
+    })
+  }
 }
 
-function Job (queue, job, timing, active, retryCount) {
-  this.queue = queue
-  this.job = job
-  this.timing = +timing
-  this.active = +active
-  this.retryCount = +retryCount
+class Job {
+  constructor (queue, job, timing, active, retryCount) {
+    this.queue = queue
+    this.job = job
+    this.timing = +timing
+    this.active = +active
+    this.retryCount = +retryCount
+  }
 }
 
 function ScanResult (name, timestamp, res) {
-  var jobs = res[0]
+  let jobs = res[0]
   this.retry = +res[1]
   this.hasMore = +res[2]
   this.jobs = []
-  for (var i = 0, l = jobs.length - 2; i < l; i += 3) {
+  for (let i = 0, l = jobs.length - 2; i < l; i += 3) {
     this.jobs.push(new Job(name, jobs[i], jobs[i + 1], timestamp, jobs[i + 2]))
   }
 }
 
 function scoresDeviation (queueScores) {
-  var count = 0
-  var score = queueScores.reduce(function (prev, scores) {
-    return prev + scores.reduce(function (p, s) {
+  let count = 0
+  let score = queueScores.reduce((prev, scores) => {
+    return prev + scores.reduce((p, s) => {
       count++
       return p + s
     }, 0)
@@ -337,15 +291,8 @@ function scoresDeviation (queueScores) {
   return count ? (score / count) : 0
 }
 
-function bindEmitError (ctx) {
-  return function (error) {
-    if (error == null) return
-    process.nextTick(function () {
-      ctx.emit('error', error)
-    })
-  }
-}
-
 function validateString (str) {
   if (typeof str !== 'string' || !str) throw new TypeError(String(str) + ' is invalid string')
 }
+
+module.exports = TimedQueue

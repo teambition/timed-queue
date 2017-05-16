@@ -43,3 +43,19 @@ thunk(function * () {
   yield timedQueue.destroyQueue('performance')
   timedQueue.close()
 })()
+
+// jobs: 0
+// add jobs:
+// ....................................................................................................
+// 2000000 jobs added, 68622 ms.
+// current jobs: 2000000
+// scan active jobs:
+// 80 jobs scaned, 7 ms.
+// remain jobs: 1999920
+// actived jobs: 80 a actived job:
+//  Job {
+//   queue: 'performance',
+//   job: 'performance_test:79',
+//   timing: 1494938200330,
+//   active: 1494938188959,
+//   retryCount: 0 }

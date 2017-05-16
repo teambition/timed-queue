@@ -4,13 +4,16 @@
   "authors": [
     "Yan Qing <admin@zensh.com>"
   ],
-  "version": "1.1.4",
+  "version": "1.2.0",
   "main": "index.js",
   "repository": {
     "type": "git",
     "url": "git@github.com:teambition/timed-queue.git"
   },
   "homepage": "https://github.com/teambition/timed-queue",
+  "engines": {
+    "node": ">= 4.5.0"
+  },
   "keywords": [
     "timed",
     "timer",
@@ -20,12 +23,12 @@
     "distributed"
   ],
   "dependencies": {
-    "thunk-redis": "^1.6.2",
-    "thunks": "^4.2.0"
+    "thunk-redis": "^2.1.0",
+    "thunks": "^4.7.6"
   },
   "devDependencies": {
-    "standard": "^7.1.0",
-    "tman": "^0.9.6"
+    "standard": "^10.0.2",
+    "tman": "^1.6.7"
   },
   "scripts": {
     "test": "standard && tman test/index.js"
