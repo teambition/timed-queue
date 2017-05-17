@@ -4,31 +4,40 @@
 //
 // **License:** MIT
 
-var tman = require('tman')
-var assert = require('assert')
-var thunk = require('thunks')()
-var redis = require('thunk-redis')
-var TimedQueue = require('../index')
+const tman = require('tman')
+const assert = require('assert')
+const thunk = require('thunks')()
+const redis = require('thunk-redis')
+const TimedQueue = require('../index')
 
 tman.suite('timed-queue', function () {
   this.timeout(50000)
 
-  tman.beforeEach(function (done) {
-    var timedQueue = new TimedQueue({autoScan: false}).connect()
-    timedQueue.queue('test')
-    timedQueue.destroyQueue('test')(function () {
-      this.close()
-    })(done)
+  const queueNames = []
+  function getName () {
+    let name = `test_${Date.now()}_${queueNames.length}`
+    queueNames.push(name)
+    return name
+  }
+
+  tman.afterEach(function * () {
+    let timedQueue = new TimedQueue({autoScan: false}).connect()
+    // ensure to clean the test queue
+    for (let name of queueNames) {
+      yield timedQueue.destroyQueue(name)
+    }
+    queueNames.length = 0
+    timedQueue.close()
   })
 
   tman.it('new TimedQueue()', function (done) {
-    var timedQueue = new TimedQueue({interval: 2000})
-    var events = []
+    const timedQueue = new TimedQueue({interval: 2000})
+    const events = []
     timedQueue
       .on('connect', function () {
         events.push('connect')
       })
-      .on('scanStart', function () {
+      .on('scanStart', function (n) {
         events.push('scanStart')
       })
       .on('scanEnd', function (queues, time) {
@@ -43,8 +52,8 @@ tman.suite('timed-queue', function () {
   })
 
   tman.it('timedQueue.scan, timedQueue.regulateFreq, timedQueue.close', function (done) {
-    var timedQueue = new TimedQueue({interval: 1000})
-    var scanCount = 0
+    const timedQueue = new TimedQueue({interval: 1000})
+    let scanCount = 0
     assert.strictEqual(timedQueue.delay, 1000)
     timedQueue.regulateFreq(-0.05)
     assert.strictEqual(timedQueue.delay, 1000)
@@ -67,303 +76,258 @@ tman.suite('timed-queue', function () {
     timedQueue.connect(redis.createClient())
   })
 
-  tman.it('timedQueue.queue, queue.addjob, queue.show, queue.deljob, timedQueue.destroyQueue', function (done) {
-    var timedQueue = new TimedQueue().connect()
-    var queue = timedQueue.queue('test')
+  tman.it('timedQueue.queue, queue.addjob, queue.show, queue.deljob, timedQueue.destroyQueue', function * () {
+    const timedQueue = new TimedQueue().connect()
+    const name = getName()
+    const queue = timedQueue.queue(name)
 
-    queue.show(1)(function (err, res) {
-      assert(err instanceof Error)
-      return this.show('123')
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res, null)
-      return this.addjob('123', Date.now())
-    })(function (err, res) {
-      assert(err instanceof Error)
-      return this.addjob('123', Date.now() + 1000)
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res, 1)
-      return this.show('123')
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res.queue, 'test')
-      assert.strictEqual(res.job, '123')
-      assert.strictEqual(res.timing > Date.now(), true)
-      assert.strictEqual(res.active, 0)
-      return this.deljob('123')
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res, 1)
-      return this.show('123')
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res, null)
-      timedQueue.close()
-    })(done)
+    yield queue.show(1)((err) => assert(err instanceof Error))
+
+    let res = yield queue.show('123')
+    assert.strictEqual(res, null)
+
+    yield queue.addjob('123', Date.now())((err) => assert(err instanceof Error))
+    res = yield queue.addjob('123', Date.now() + 1000)
+    assert.strictEqual(res, 1)
+
+    res = yield queue.show('123')
+    assert.strictEqual(res.queue, name)
+    assert.strictEqual(res.job, '123')
+    assert.strictEqual(res.timing > Date.now(), true)
+    assert.strictEqual(res.active, 0)
+
+    res = yield queue.deljob('123')
+    assert.strictEqual(res, 1)
+
+    res = yield queue.show('123')
+    assert.strictEqual(res, null)
+    timedQueue.close()
   })
 
-  tman.it('queue.init, queue.getjobs, queue.showActive, queue.len, queue.ackjob', function (done) {
-    var time = Date.now()
-    var timedQueue = new TimedQueue({autoScan: false}).connect(redis.createClient())
-    var queue = timedQueue.queue('test', {
+  tman.it('queue.init, queue.getjobs, queue.showActive, queue.len, queue.ackjob', function * () {
+    let time = Date.now()
+    const timedQueue = new TimedQueue({autoScan: false}).connect(redis.createClient())
+    const queue = timedQueue.queue(getName(), {
       count: 3,
       retry: 1000,
       expire: 3000,
       accuracy: 200
     })
 
-    queue.getjobs()(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.deepEqual(res, {
-        retry: 1000,
-        hasMore: 0,
-        jobs: []
-      })
-      return this.addjob(
-        'job0', time + 1000,
-        'job1', time + 1010,
-        'job2', time + 1020,
-        'job3', time + 1030,
-        'job4', time + 1100,
-        'job5', time + 1300,
-        'job6', time + 1320,
-        'job7', time + 1340,
-        'job8', time + 1360,
-        'job9', time + 3000
-      )
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res, 10)
-      return this.len()
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res, 10)
-      return thunk.delay.call(this, 1020)(function () {
-        return this.getjobs()
-      })
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res.hasMore, 1)
-      assert.deepEqual(res.jobs.map(function (job) {
-        assert.strictEqual(job.retryCount, 0)
-        assert.strictEqual(job.timing > time, true)
-        assert.strictEqual(job.active > time, true)
-        return job.job
-      }), ['job0', 'job1', 'job2'])
-      return this.showActive()
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.deepEqual(res.map(function (job) {
-        assert.strictEqual(job.retryCount, 0)
-        assert.strictEqual(job.timing > time, true)
-        assert.strictEqual(job.active > time, true)
-        return job.job
-      }), ['job0', 'job1', 'job2'])
-      return this.len()
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res, 7)
-      return this.getjobs()
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res.hasMore, 0)
-      assert.deepEqual(res.jobs.map(function (job) {
-        assert.strictEqual(job.retryCount, 0)
-        assert.strictEqual(job.timing > time, true)
-        assert.strictEqual(job.active > time, true)
-        return job.job
-      }), ['job3', 'job4'])
-      return thunk.delay.call(this, 1000)(function () {
-        return this.getjobs()
-      })
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res.hasMore, 1)
-      var retryJob = ['job0', 'job1', 'job2', 'job3', 'job4']
-      assert.deepEqual(res.jobs.map(function (job) {
-        assert.strictEqual(job.retryCount, retryJob.indexOf(job.job) >= 0 ? 1 : 0)
-        assert.strictEqual(job.timing > time, true)
-        assert.strictEqual(job.active > time, true)
-        return job.job
-      }), retryJob.concat('job5', 'job6', 'job7'))
-      return this.getjobs()
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res.hasMore, 0)
-      assert.deepEqual(res.jobs.map(function (job) {
-        assert.strictEqual(job.retryCount, 0)
-        assert.strictEqual(job.timing > time, true)
-        assert.strictEqual(job.active > time, true)
-        return job.job
-      }), ['job8'])
-      return this.ackjob('job0', 'job1', 'job2', 'job3', 'job4', 'job5', 'job6', 'job7')
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res, 8)
-      return thunk.delay.call(this, 1000)(function () {
-        return this.getjobs()
-      })
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res.hasMore, 0)
-      assert.deepEqual(res.jobs.map(function (job) {
-        assert.strictEqual(job.retryCount, job.job === 'job8' ? 1 : 0)
-        assert.strictEqual(job.timing > time, true)
-        assert.strictEqual(job.active > time, true)
-        return job.job
-      }), ['job8', 'job9'])
-      timedQueue.close()
-    })(done)
+    let res = yield queue.getjobs()
+    assert.deepEqual(res, {
+      retry: 1000,
+      hasMore: 0,
+      jobs: []
+    })
+
+    res = yield queue.addjob(
+      'job0', time + 1000,
+      'job1', time + 1010,
+      'job2', time + 1020,
+      'job3', time + 1030,
+      'job4', time + 1100,
+      'job5', time + 1300,
+      'job6', time + 1320,
+      'job7', time + 1340,
+      'job8', time + 1360,
+      'job9', time + 3000
+    )
+    assert.strictEqual(res, 10)
+
+    res = yield queue.len()
+    assert.strictEqual(res, 10)
+
+    yield thunk.delay(1020)
+
+    res = yield queue.getjobs()
+    assert.strictEqual(res.hasMore, 1)
+    assert.deepEqual(res.jobs.map((job) => {
+      assert.strictEqual(job.retryCount, 0)
+      assert.strictEqual(job.timing > time, true)
+      assert.strictEqual(job.active > time, true)
+      return job.job
+    }), ['job0', 'job1', 'job2'])
+
+    res = yield queue.showActive()
+    assert.deepEqual(res.map((job) => {
+      assert.strictEqual(job.retryCount, 0)
+      assert.strictEqual(job.timing > time, true)
+      assert.strictEqual(job.active > time, true)
+      return job.job
+    }), ['job0', 'job1', 'job2'])
+
+    res = yield queue.len()
+    assert.strictEqual(res, 7)
+
+    res = yield queue.getjobs()
+    assert.strictEqual(res.hasMore, 0)
+    assert.deepEqual(res.jobs.map((job) => {
+      assert.strictEqual(job.retryCount, 0)
+      assert.strictEqual(job.timing > time, true)
+      assert.strictEqual(job.active > time, true)
+      return job.job
+    }), ['job3', 'job4'])
+
+    yield thunk.delay(1000)
+    res = yield queue.getjobs()
+    assert.strictEqual(res.hasMore, 1)
+    let retryJob = ['job0', 'job1', 'job2', 'job3', 'job4']
+    assert.deepEqual(res.jobs.map((job) => {
+      assert.strictEqual(job.retryCount, retryJob.indexOf(job.job) >= 0 ? 1 : 0)
+      assert.strictEqual(job.timing > time, true)
+      assert.strictEqual(job.active > time, true)
+      return job.job
+    }), retryJob.concat('job5', 'job6', 'job7'))
+
+    res = yield queue.getjobs()
+    assert.strictEqual(res.hasMore, 0)
+    assert.deepEqual(res.jobs.map((job) => {
+      assert.strictEqual(job.retryCount, 0)
+      assert.strictEqual(job.timing > time, true)
+      assert.strictEqual(job.active > time, true)
+      return job.job
+    }), ['job8'])
+
+    res = yield queue.ackjob('job0', 'job1', 'job2', 'job3', 'job4', 'job5', 'job6', 'job7')
+    assert.strictEqual(res, 8)
+
+    yield thunk.delay(1000)
+    res = yield queue.getjobs()
+    assert.strictEqual(res.hasMore, 0)
+    assert.deepEqual(res.jobs.map((job) => {
+      assert.strictEqual(job.retryCount, job.job === 'job8' ? 1 : 0)
+      assert.strictEqual(job.timing > time, true)
+      assert.strictEqual(job.active > time, true)
+      return job.job
+    }), ['job8', 'job9'])
+    timedQueue.close()
   })
 
-  tman.it('queue.scan', function (done) {
-    var jobs = []
-    var tasks = []
-    var time = Date.now() + 100
-    var timedQueue = new TimedQueue({autoScan: false}).connect(redis.createClient())
-    var queue = timedQueue.queue('test', {
+  tman.it('queue.scan', function * () {
+    const jobs = []
+    const tasks = []
+
+    let time = Date.now() + 100
+    const timedQueue = new TimedQueue({autoScan: false}).connect(redis.createClient())
+    const queue = timedQueue.queue(getName(), {
       count: 8,
       retry: 1000,
       expire: 3000,
       accuracy: 300
     })
 
-    for (var i = 0; i < 100; i++) tasks.push(i)
+    for (let i = 0; i < 100; i++) tasks.push(i)
 
-    queue.scan()(function (err, res) {
-      assert.strictEqual(err instanceof Error, true)
+    yield queue.scan()((err) => assert.ok(err instanceof Error))
 
-      this.on('job', function (job) {
-        jobs.push(job)
-      })
-      return this.scan()
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.deepEqual(res, [])
-      assert.deepEqual(jobs, [])
+    queue.on('job', function (job) {
+      jobs.push(job)
+    })
+    yield queue.scan()
+    assert.deepEqual(jobs, [])
 
-      return thunk.all.call(this, tasks.map(function (index) {
-        return queue.addjob(String(index), time + index * 100)
-      }))(function (err, res) {
-        if (err) throw err
-        return this.len()
-      })
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res, 100)
-      return this.scan()
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res.length, 3)
-      assert.strictEqual(Math.abs(res.reduce(function (m, v) { return m + v }, 0) / res.length) < 1, true)
-      assert.strictEqual(jobs.length, 0) // jobs should be emit in next tick
-      return thunk.delay.call(this, 1000)(function () {
-        assert.deepEqual(jobs.map(function (job) {
-          assert.strictEqual(job.timing >= time, true)
-          return job.job
-        }), ['0', '1', '2'])
-        return this.scan()
-      })
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res.length, 10)
-      assert.strictEqual(Math.abs(res.reduce(function (m, v) { return m + v }, 0) / res.length) < 1, true)
-      return thunk.delay.call(this, 2000)(function () {
-        assert.deepEqual(jobs.map(function (job) {
-          assert.strictEqual(job.timing >= time, true)
-          return job.job
-        }), [
-          '0', '1', '2', '0', '1', '2', '3', '4', '5', '6', '7',
-          '8', '9', '10', '11', '12'
-        ])
-        jobs.length = 0
-        return this.scan()
-      })
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res.length, 20)
-      assert.strictEqual(Math.abs(res.reduce(function (m, v) { return m + v }, 0) / res.length) < 1, true)
-      return thunk.delay.call(this)(function () {
-        // '0', '1', '2' should expired
-        var currentJobs = [
-          '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15',
-          '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27',
-          '28', '29', '30', '31', '32'
-        ]
-        assert.deepEqual(jobs.map(function (job) {
-          assert.strictEqual(job.timing >= time, true)
-          return job.job
-        }), currentJobs)
-        return this.ackjob(currentJobs)
-      })
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.strictEqual(res, 30)
-      return this.scan()
-    })(function (err, res) {
-      assert.strictEqual(err, null)
-      assert.deepEqual(res, [])
-      timedQueue.close()
-    })(done)
+    yield tasks.map((index) => queue.addjob(String(index), time + index * 100))
+    let res = yield queue.len()
+    assert.strictEqual(res, 100)
+
+    res = yield queue.scan()
+    assert.strictEqual(res.length, 3)
+    assert.strictEqual(Math.abs(res.reduce((m, v) => { return m + v }, 0) / res.length) < 1, true)
+    assert.strictEqual(jobs.length, 0) // jobs should be emit in next tick
+
+    yield thunk.delay(1000)
+    assert.deepEqual(jobs.map((job) => {
+      assert.strictEqual(job.timing >= time, true)
+      return job.job
+    }), ['0', '1', '2'])
+
+    res = yield queue.scan()
+    assert.strictEqual(res.length, 10)
+    assert.strictEqual(Math.abs(res.reduce((m, v) => { return m + v }, 0) / res.length) < 1, true)
+
+    yield thunk.delay(2000)
+    assert.deepEqual(jobs.map((job) => {
+      assert.strictEqual(job.timing >= time, true)
+      return job.job
+    }), [
+      '0', '1', '2', '0', '1', '2', '3', '4', '5', '6', '7',
+      '8', '9', '10', '11', '12'
+    ])
+    jobs.length = 0
+
+    res = yield queue.scan()
+    assert.strictEqual(res.length, 20)
+    assert.strictEqual(Math.abs(res.reduce((m, v) => { return m + v }, 0) / res.length) < 1, true)
+    yield thunk.delay()
+    // '0', '1', '2' should expired
+    let currentJobs = [
+      '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15',
+      '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27',
+      '28', '29', '30', '31', '32'
+    ]
+    assert.deepEqual(jobs.map((job) => {
+      assert.strictEqual(job.timing >= time, true)
+      return job.job
+    }), currentJobs)
+
+    res = yield queue.ackjob(currentJobs)
+    assert.strictEqual(res, 30)
+
+    res = yield queue.scan()
+    assert.deepEqual(res, [])
+    timedQueue.close()
   })
 
-  tman.it('chaos: 100000 random jobs', function (done) {
-    var timedQueue = new TimedQueue({interval: 1000}).connect(redis.createClient())
-    var i = 100000
-    var jobs = []
-    var check = {}
+  tman.suite('chaos: 100000 random jobs', function () {
+    const jobs = []
+    const check = {}
+    const check2 = {}
 
-    while (i--) jobs.push(String(i))
-
-    var queues = [timedQueue.queue('test1'), timedQueue.queue('test2'), timedQueue.queue('test3')]
-
-    queues.map(function (queue) {
-      queue.on('job', function (job) {
-        if (check[job.job] !== job.timing) return finish(new Error('uncaughtException: ' + JSON.stringify(job)))
-        delete check[job.job]
-        this.ackjob(job.job)(function (error) {
-          if (error) finish(error)
-        })
-      })
+    tman.after(function () {
+      jobs.length = 0 // should clear jobs
+      assert.strictEqual(Object.keys(check).length, 0)
     })
 
-    addJob()
+    tman.it('ok', function (done) {
+      const timedQueue = new TimedQueue({interval: 1000}).connect(redis.createClient())
+      const queues = [timedQueue.queue(getName()), timedQueue.queue(getName()), timedQueue.queue(getName())]
 
-    function addJob () {
-      if (!jobs.length) return thunk.delay(5000)(finish)
+      let i = 100000
+      while (i--) jobs.push(String(i))
 
-      var i = 0
-      var list = []
-      var time = Date.now() + 2000
-      var seed = Math.ceil(Math.random() * 10000)
-      // push random jobs
-      while (jobs.length && i++ < seed) {
-        var job = jobs.pop()
-        check[job] = time + (i < 3000 ? i : Math.floor(i / 3))
-        list.push(queues[i % 3].addjob(job, check[job]))
+      for (let queue of queues) {
+        queue.on('job', (job) => {
+          if (check[job.job] !== job.timing) {
+            console.log(check2[job.job])
+            return done(new Error(`uncaughtException: ${check[job.job]}, ${JSON.stringify(job)}`))
+          }
+          delete check[job.job]
+          check2[job.job] = job
+          queue.ackjob(job.job)((err) => err && done(err))
+        })
       }
 
-      thunk.all(list)(function (error) {
-        if (error) finish(error)
-        else thunk.delay(seed / 10)(addJob)
-      })
-    }
+      thunk(function * () {
+        while (jobs.length) {
+          let i = 0
+          let list = []
+          let time = Date.now() + 2000
+          let seed = Math.ceil(Math.random() * 10000)
+          // push random jobs
+          while (jobs.length && i++ < seed) {
+            let job = jobs.pop()
+            check[job] = time + (i < 3000 ? i : Math.floor(i / 3))
+            list.push(queues[i % 3].addjob(job, check[job]))
+          }
 
-    function finish (error) {
-      // debug for travis-ci
-      if (error) console.error(error.stack)
-      // clear jobs
-      jobs.length = 0
-      // clear queues
-      thunk.all([
-        timedQueue.destroyQueue('test1'),
-        timedQueue.destroyQueue('test2'),
-        timedQueue.destroyQueue('test3')
-      ])(function (err) {
-        if (error || err) throw error || err
-        assert.deepEqual(Object.keys(check), [])
+          yield list
+          yield thunk.delay(seed / 10)
+        }
+
+        // wait for jobs ACK
+        yield thunk.delay(5000)
       })(done)
-    }
+    })
   })
 })

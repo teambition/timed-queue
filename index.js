@@ -167,7 +167,7 @@ class Queue extends EventEmitter {
       for (let i = 0, l = args.length || 2; i < l; i += 2) {
         validateString(args[i])
         timing = Math.floor(args[i + 1])
-        if (!timing || timing <= current) throw new Error(String(args[i + 1]) + ' is invalid time in "' + job + '".')
+        if (!timing || timing <= current) throw new Error(`${String(args[i + 1])} is invalid time in "${job}".`)
         data.push(timing, args[i])
       }
 
@@ -226,18 +226,16 @@ class Queue extends EventEmitter {
   scan () {
     return thunk.call(this, function * () {
       let scores = []
-      if (!this.listenerCount('job')) throw new Error('"job" listener required!')
+      if (!this.listenerCount('job')) throw new Error(`Queue "${this.name}": job" listener required!`)
 
-      let res = null
-      while (true) {
-        res = yield this.getjobs(!res)
-        if (res) {
-          res.jobs.map((job) => {
-            if (!job.retryCount) scores.push((job.timing - job.active) / res.retry)
-            process.nextTick(() => this.emit('job', job))
-          })
-          if (!res.hasMore) return scores
-        }
+      let res = yield this.getjobs(true) // get active jobs firstly
+      while (res) {
+        res.jobs.map((job) => {
+          if (!job.retryCount) scores.push((job.timing - job.active) / res.retry)
+          process.nextTick(() => this.emit('job', job))
+        })
+        if (!res.hasMore) return scores
+        res = yield this.getjobs()
       }
     })
   }
@@ -292,7 +290,7 @@ function scoresDeviation (queueScores) {
 }
 
 function validateString (str) {
-  if (typeof str !== 'string' || !str) throw new TypeError(String(str) + ' is invalid string')
+  if (typeof str !== 'string' || !str) throw new TypeError(`${String(str)} is invalid string`)
 }
 
 module.exports = TimedQueue

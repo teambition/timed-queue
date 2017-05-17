@@ -18,8 +18,8 @@ Distributed timed job queue, backed by redis.
 ## Demo
 
 ```js
-var TimedQueue = require('timed-queue')
-var timedQueue = new TimedQueue({prefix: 'TQ1', interval: 1000 * 60})
+const TimedQueue = require('timed-queue')
+const timedQueue = new TimedQueue({prefix: 'TQ1', interval: 1000 * 60})
 
 
 // connect to redis cluster.
@@ -30,7 +30,7 @@ timedQueue.connect([7000, 7001, 7002])
 
 
 // create 'event' job queue in timed-queue instance
-var eventQueue = timedQueue.queue('event')
+const eventQueue = timedQueue.queue('event')
 
 // add 'job' listener
 eventQueue.on('job', function (jobObj) {
@@ -75,7 +75,7 @@ function Job (queue, job, timing, active, retryCount) {
 ## API
 
 ```js
-var TimedQueue = require('timed-queue')
+const TimedQueue = require('timed-queue')
 ```
 
 ### new TimedQueue([options]) => `timedQueue` object
@@ -91,7 +91,7 @@ Return a `timedQueue` client. It is an EventEmitter instance.
 - `options.autoScan`: {Boolean} The flag to enable or disable automatic scan. Default to `true`. It can be set to `false` if automatic scan is not desired.
 
 ```js
-var timedQueue = new TimedQueue()
+const timedQueue = new TimedQueue()
 ```
 
 #### TimedQueue Events
@@ -142,7 +142,7 @@ Return a `Queue` instance if one exists. Otherwise it creates a `Queue` instance
 - `options.accuracy`: {Number} Scanning accuracy, Default to timedQueue's `accuracy`
 
 ```js
-var eventQueue = timedQueue.queue('event', {retry: 1000, expire: 5000})
+const eventQueue = timedQueue.queue('event', {retry: 1000, expire: 5000})
 ```
 
 #### Queue Events

@@ -4,10 +4,10 @@
 //
 // **License:** MIT
 
-var TimedQueue = require('../index.js')
-var timedQueue = new TimedQueue({prefix: 'TQ', interval: 1000 * 2})
-var addLog = console.log.bind(console, 'addjob: ')
-var ackLog = console.log.bind(console, 'ackjob: ')
+const TimedQueue = require('../index.js')
+const timedQueue = new TimedQueue({prefix: 'TQ', interval: 1000 * 2})
+const addLog = console.log.bind(console, 'addjob: ')
+const ackLog = console.log.bind(console, 'ackjob: ')
 
 // connect to redis.
 timedQueue
@@ -17,7 +17,7 @@ timedQueue
   })
 
 // create 'event' job queue in timed-queue instance
-var eventQueue = timedQueue.queue('event')
+const eventQueue = timedQueue.queue('event')
 
 // add 'job' listener
 eventQueue.on('job', function (job) {
