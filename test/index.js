@@ -282,7 +282,6 @@ tman.suite('timed-queue', function () {
   tman.suite('chaos: 100000 random jobs', function () {
     const jobs = []
     const check = {}
-    const check2 = {}
 
     tman.after(function () {
       jobs.length = 0 // should clear jobs
@@ -299,11 +298,9 @@ tman.suite('timed-queue', function () {
       for (let queue of queues) {
         queue.on('job', (job) => {
           if (check[job.job] !== job.timing) {
-            console.log(check2[job.job])
             return done(new Error(`uncaughtException: ${check[job.job]}, ${JSON.stringify(job)}`))
           }
           delete check[job.job]
-          check2[job.job] = job
           queue.ackjob(job.job)((err) => err && done(err))
         })
       }

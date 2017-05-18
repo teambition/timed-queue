@@ -229,13 +229,13 @@ class Queue extends EventEmitter {
       if (!this.listenerCount('job')) throw new Error(`Queue "${this.name}": job" listener required!`)
 
       let res = yield this.getjobs(true) // get active jobs firstly
-      while (res) {
+      while (true) {
         res.jobs.map((job) => {
           if (!job.retryCount) scores.push((job.timing - job.active) / res.retry)
           process.nextTick(() => this.emit('job', job))
         })
         if (!res.hasMore) return scores
-        res = yield this.getjobs()
+        res = yield this.getjobs(false)
       }
     })
   }
