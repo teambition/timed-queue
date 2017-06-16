@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "standard": "^10.0.2",
+    "thunk-queue": "^1.2.0",
     "tman": "^1.6.9"
   },
   "scripts": {

@@ -8,6 +8,7 @@ const tman = require('tman')
 const assert = require('assert')
 const thunk = require('thunks')()
 const redis = require('thunk-redis')
+const thunkQueue = require('thunk-queue')
 const TimedQueue = require('../index')
 
 tman.suite('timed-queue', function () {
@@ -281,14 +282,10 @@ tman.suite('timed-queue', function () {
 
   tman.suite('chaos: 100000 random jobs', function () {
     const jobs = []
-    const check = {}
-
-    tman.after(function () {
-      jobs.length = 0 // should clear jobs
-      assert.strictEqual(Object.keys(check).length, 0)
-    })
+    const check = new Map()
 
     tman.it('ok', function (done) {
+      const queueT = thunkQueue()
       const timedQueue = new TimedQueue({interval: 1000}).connect(redis.createClient())
       const queues = [timedQueue.queue(getName()), timedQueue.queue(getName()), timedQueue.queue(getName())]
 
@@ -297,11 +294,15 @@ tman.suite('timed-queue', function () {
 
       for (let queue of queues) {
         queue.on('job', (job) => {
-          if (check[job.job] !== job.timing) {
-            return done(new Error(`uncaughtException: ${check[job.job]}, ${JSON.stringify(job)}`))
+          if (check.get(job.job) !== job.timing) {
+            queueT.push(() => { throw new Error(`uncaughtException: ${check[job.job]}, ${JSON.stringify(job)}`) })
+          } else {
+            check.delete(job.job)
+            queueT.push(queue.ackjob(job.job)((err) => {
+              if (err) throw err
+            }))
           }
-          delete check[job.job]
-          queue.ackjob(job.job)((err) => err && done(err))
+          if (!check.size) queueT.end()
         })
       }
 
@@ -314,8 +315,8 @@ tman.suite('timed-queue', function () {
           // push random jobs
           while (jobs.length && i++ < seed) {
             let job = jobs.pop()
-            check[job] = time + (i < 3000 ? i : Math.floor(i / 3))
-            list.push(queues[i % 3].addjob(job, check[job]))
+            check.set(job, time + (i < 3000 ? i : Math.floor(i / 3)))
+            list.push(queues[i % 3].addjob(job, check.get(job)))
           }
 
           yield list
@@ -323,7 +324,7 @@ tman.suite('timed-queue', function () {
         }
 
         // wait for jobs ACK
-        yield thunk.delay(5000)
+        yield queueT
       })(done)
     })
   })
