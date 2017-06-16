@@ -1,5 +1,5 @@
-timed-queue
-====
+# timed-queue
+
 Distributed timed job queue, backed by redis.
 
 [![NPM version][npm-image]][npm-url]
@@ -103,6 +103,7 @@ const timedQueue = new TimedQueue()
 - timedQueue.on('scanEnd', function (queuesLength, timeConsuming) {})
 
 ### TimedQueue.prototype.connect([host, options]) => `this`
+
 ### TimedQueue.prototype.connect(redisClient) => `this`
 
 Connect to redis. Arguments are the same as [thunk-redis](https://github.com/thunks/thunk-redis)'s `createClient`, or give a thunk-redis instance.
@@ -157,6 +158,7 @@ const eventQueue = timedQueue.queue('event', {retry: 1000, expire: 5000})
 - `options.accuracy`: {Number} Scanning accuracy. Default to timedQueue's `accuracy`
 
 ### Queue.prototype.addjob(job, timing[, job, timing, ...]) => `thunk` function
+
 ### Queue.prototype.addjob([job, timing, job, timing, ...]) => `thunk` function
 
 Add one or more jobs to the queue. It can be used to update the job's timing.
@@ -191,6 +193,7 @@ eventQueue.show('52b3b5f49c2238313600015d')(function (err, res) {
 ```
 
 ### Queue.prototype.deljob(job[, job, ...]) => `thunk` function
+
 ### Queue.prototype.deljob([job, job, ...]) => `thunk` function
 
 Delete one or more jobs.
