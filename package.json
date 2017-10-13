@@ -4,7 +4,7 @@
   "authors": [
     "Yan Qing <admin@zensh.com>"
   ],
-  "version": "1.2.1",
+  "version": "1.2.2",
   "main": "index.js",
   "repository": {
     "type": "git",
@@ -23,13 +23,13 @@
     "distributed"
   ],
   "dependencies": {
-    "thunk-redis": "^2.1.2",
-    "thunks": "^4.8.0"
+    "thunk-redis": "^2.1.6",
+    "thunks": "^4.9.0"
   },
   "devDependencies": {
-    "standard": "^10.0.2",
+    "standard": "^10.0.3",
     "thunk-queue": "^1.2.0",
-    "tman": "^1.6.9"
+    "tman": "^1.7.2"
   },
   "scripts": {
     "test": "standard && tman test/index.js"
