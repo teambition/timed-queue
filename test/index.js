@@ -22,7 +22,7 @@ tman.suite('timed-queue', function () {
   }
 
   tman.afterEach(function * () {
-    let timedQueue = new TimedQueue({autoScan: false}).connect()
+    let timedQueue = new TimedQueue({ autoScan: false }).connect()
     // ensure to clean the test queue
     for (let name of queueNames) {
       yield timedQueue.destroyQueue(name)
@@ -32,7 +32,7 @@ tman.suite('timed-queue', function () {
   })
 
   tman.it('new TimedQueue()', function (done) {
-    const timedQueue = new TimedQueue({interval: 2000})
+    const timedQueue = new TimedQueue({ interval: 2000 })
     const events = []
     timedQueue
       .on('connect', function () {
@@ -45,7 +45,7 @@ tman.suite('timed-queue', function () {
         events.push('scanEnd')
         assert.strictEqual(queues, 0)
         assert.strictEqual(time >= 0, true)
-        assert.deepEqual(events, ['connect', 'scanStart', 'scanEnd'])
+        assert.deepStrictEqual(events, ['connect', 'scanStart', 'scanEnd'])
         timedQueue.close()
         done()
       })
@@ -53,7 +53,7 @@ tman.suite('timed-queue', function () {
   })
 
   tman.it('timedQueue.scan, timedQueue.regulateFreq, timedQueue.close', function (done) {
-    const timedQueue = new TimedQueue({interval: 1000})
+    const timedQueue = new TimedQueue({ interval: 1000 })
     let scanCount = 0
     assert.strictEqual(timedQueue.delay, 1000)
     timedQueue.regulateFreq(-0.05)
@@ -107,7 +107,7 @@ tman.suite('timed-queue', function () {
 
   tman.it('queue.init, queue.getjobs, queue.showActive, queue.len, queue.ackjob', function * () {
     let time = Date.now()
-    const timedQueue = new TimedQueue({autoScan: false}).connect(redis.createClient())
+    const timedQueue = new TimedQueue({ autoScan: false }).connect(redis.createClient())
     const queue = timedQueue.queue(getName(), {
       count: 3,
       retry: 1000,
@@ -116,7 +116,7 @@ tman.suite('timed-queue', function () {
     })
 
     let res = yield queue.getjobs()
-    assert.deepEqual(res, {
+    assert.deepStrictEqual(Object.assign({}, res), {
       retry: 1000,
       hasMore: 0,
       jobs: []
@@ -143,7 +143,7 @@ tman.suite('timed-queue', function () {
 
     res = yield queue.getjobs()
     assert.strictEqual(res.hasMore, 1)
-    assert.deepEqual(res.jobs.map((job) => {
+    assert.deepStrictEqual(res.jobs.map((job) => {
       assert.strictEqual(job.retryCount, 0)
       assert.strictEqual(job.timing > time, true)
       assert.strictEqual(job.active > time, true)
@@ -151,7 +151,7 @@ tman.suite('timed-queue', function () {
     }), ['job0', 'job1', 'job2'])
 
     res = yield queue.showActive()
-    assert.deepEqual(res.map((job) => {
+    assert.deepStrictEqual(res.map((job) => {
       assert.strictEqual(job.retryCount, 0)
       assert.strictEqual(job.timing > time, true)
       assert.strictEqual(job.active > time, true)
@@ -163,7 +163,7 @@ tman.suite('timed-queue', function () {
 
     res = yield queue.getjobs()
     assert.strictEqual(res.hasMore, 0)
-    assert.deepEqual(res.jobs.map((job) => {
+    assert.deepStrictEqual(res.jobs.map((job) => {
       assert.strictEqual(job.retryCount, 0)
       assert.strictEqual(job.timing > time, true)
       assert.strictEqual(job.active > time, true)
@@ -174,7 +174,7 @@ tman.suite('timed-queue', function () {
     res = yield queue.getjobs()
     assert.strictEqual(res.hasMore, 1)
     let retryJob = ['job0', 'job1', 'job2', 'job3', 'job4']
-    assert.deepEqual(res.jobs.map((job) => {
+    assert.deepStrictEqual(res.jobs.map((job) => {
       assert.strictEqual(job.retryCount, retryJob.indexOf(job.job) >= 0 ? 1 : 0)
       assert.strictEqual(job.timing > time, true)
       assert.strictEqual(job.active > time, true)
@@ -183,7 +183,7 @@ tman.suite('timed-queue', function () {
 
     res = yield queue.getjobs()
     assert.strictEqual(res.hasMore, 0)
-    assert.deepEqual(res.jobs.map((job) => {
+    assert.deepStrictEqual(res.jobs.map((job) => {
       assert.strictEqual(job.retryCount, 0)
       assert.strictEqual(job.timing > time, true)
       assert.strictEqual(job.active > time, true)
@@ -196,7 +196,7 @@ tman.suite('timed-queue', function () {
     yield thunk.delay(1000)
     res = yield queue.getjobs()
     assert.strictEqual(res.hasMore, 0)
-    assert.deepEqual(res.jobs.map((job) => {
+    assert.deepStrictEqual(res.jobs.map((job) => {
       assert.strictEqual(job.retryCount, job.job === 'job8' ? 1 : 0)
       assert.strictEqual(job.timing > time, true)
       assert.strictEqual(job.active > time, true)
@@ -210,7 +210,7 @@ tman.suite('timed-queue', function () {
     const tasks = []
 
     let time = Date.now() + 100
-    const timedQueue = new TimedQueue({autoScan: false}).connect(redis.createClient())
+    const timedQueue = new TimedQueue({ autoScan: false }).connect(redis.createClient())
     const queue = timedQueue.queue(getName(), {
       count: 8,
       retry: 1000,
@@ -226,7 +226,7 @@ tman.suite('timed-queue', function () {
       jobs.push(job)
     })
     yield queue.scan()
-    assert.deepEqual(jobs, [])
+    assert.deepStrictEqual(jobs, [])
 
     yield tasks.map((index) => queue.addjob(String(index), time + index * 100))
     let res = yield queue.len()
@@ -238,7 +238,7 @@ tman.suite('timed-queue', function () {
     assert.strictEqual(jobs.length, 0) // jobs should be emit in next tick
 
     yield thunk.delay(1000)
-    assert.deepEqual(jobs.map((job) => {
+    assert.deepStrictEqual(jobs.map((job) => {
       assert.strictEqual(job.timing >= time, true)
       return job.job
     }), ['0', '1', '2'])
@@ -248,7 +248,7 @@ tman.suite('timed-queue', function () {
     assert.strictEqual(Math.abs(res.reduce((m, v) => { return m + v }, 0) / res.length) < 1, true)
 
     yield thunk.delay(2000)
-    assert.deepEqual(jobs.map((job) => {
+    assert.deepStrictEqual(jobs.map((job) => {
       assert.strictEqual(job.timing >= time, true)
       return job.job
     }), [
@@ -267,7 +267,7 @@ tman.suite('timed-queue', function () {
       '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27',
       '28', '29', '30', '31', '32'
     ]
-    assert.deepEqual(jobs.map((job) => {
+    assert.deepStrictEqual(jobs.map((job) => {
       assert.strictEqual(job.timing >= time, true)
       return job.job
     }), currentJobs)
@@ -276,7 +276,7 @@ tman.suite('timed-queue', function () {
     assert.strictEqual(res, 30)
 
     res = yield queue.scan()
-    assert.deepEqual(res, [])
+    assert.deepStrictEqual(res, [])
     timedQueue.close()
   })
 
@@ -286,7 +286,7 @@ tman.suite('timed-queue', function () {
 
     tman.it('ok', function (done) {
       const queueT = thunkQueue()
-      const timedQueue = new TimedQueue({interval: 1000}).connect(redis.createClient())
+      const timedQueue = new TimedQueue({ interval: 1000 }).connect(redis.createClient())
       const queues = [timedQueue.queue(getName()), timedQueue.queue(getName()), timedQueue.queue(getName())]
 
       let i = 100000

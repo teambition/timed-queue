@@ -6,7 +6,7 @@
 
 const thunk = require('thunks')()
 const TimedQueue = require('../index.js')
-const timedQueue = new TimedQueue({autoScan: false})
+const timedQueue = new TimedQueue({ autoScan: false })
 
 timedQueue.connect()
 

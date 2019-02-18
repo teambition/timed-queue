@@ -12,7 +12,7 @@ const EventEmitter = require('events').EventEmitter
 
 const thunk = thunks()
 const slice = Array.prototype.slice
-const luaScript = fs.readFileSync(path.join(__dirname, 'queue.lua'), {encoding: 'utf8'})
+const luaScript = fs.readFileSync(path.join(__dirname, 'queue.lua'), { encoding: 'utf8' })
 
 class TimedQueue extends EventEmitter {
   constructor (options) {
@@ -46,8 +46,8 @@ class TimedQueue extends EventEmitter {
     }
 
     this.redis.on('connect', () => this.emit('connect'))
-    .on('error', (err) => this.emit('error', err))
-    .on('close', () => this.emit('close'))
+      .on('error', (err) => this.emit('error', err))
+      .on('close', () => this.emit('close'))
 
     // auto scan jobs
     if (this.autoScan) {
