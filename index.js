@@ -226,7 +226,9 @@ class Queue extends EventEmitter {
   scan () {
     return thunk.call(this, function * () {
       let scores = []
-      if (!this.listenerCount('job')) throw new Error(`Queue "${this.name}": job" listener required!`)
+      if (!this.listenerCount('job')) {
+        return // Don't scan if no 'job' listener
+      }
 
       let res = yield this.getjobs(true) // get active jobs firstly
       while (true) {

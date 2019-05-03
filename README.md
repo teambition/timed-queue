@@ -150,6 +150,8 @@ const eventQueue = timedQueue.queue('event', {retry: 1000, expire: 5000})
 
 - queue.on('job', function (job) {})
 
+If no `job` listener on queue, queue scanning will not run.
+
 ### Queue.prototype.init([options]) => `this`
 
 - `options.count`: {Number} The maximum job count for queue's `getjobs` method. Default to timedQueue's `count`

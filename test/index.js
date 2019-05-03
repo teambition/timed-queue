@@ -220,7 +220,7 @@ tman.suite('timed-queue', function () {
 
     for (let i = 0; i < 100; i++) tasks.push(i)
 
-    yield queue.scan()((err) => assert.ok(err instanceof Error))
+    yield queue.scan()((err) => assert.strictEqual(err, null))
 
     queue.on('job', function (job) {
       jobs.push(job)
